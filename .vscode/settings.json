@@ -1,1 +1,8 @@
-{}
+{
+  "dotnet.defaultSolution": "Hypercube.sln",
+  "dotnet.testWindow.useTestingPlatformProtocol": false,
+  "dotnet.unitTests.runSettingsPath": "${workspaceFolder}/tests/Hypercube.Tests/test.runsettings",
+  "csharp.debug.console": "integratedTerminal",
+  "csharp.debug.logging.module": false,
+  "csharp.debug.justMyCode": true
+}

@@ -54,11 +54,11 @@ public sealed class ExtendedCapabilitiesTests
     public void AnalyzeDriversForMetrics_AttributesMultipleMetrics()
     {
         var previous = new SummarySnapshot(
-            DateTimeOffset.UtcNow.AddMinutes(-5),
+            TestTimestamps.AtMinutes(0),
             [new SummaryRow("channel", "sms", new Dictionary<string, double> { ["count"] = 100, ["sum"] = 1000 })]);
 
         var current = new SummarySnapshot(
-            DateTimeOffset.UtcNow,
+            TestTimestamps.AtMinutes(5),
             [new SummaryRow("channel", "sms", new Dictionary<string, double> { ["count"] = 150, ["sum"] = 1800 })]);
 
         var result = DeterministicInsightEngine.AnalyzeDriversForMetrics(previous, current, ["count", "sum"]);
@@ -124,7 +124,7 @@ public sealed class ExtendedCapabilitiesTests
     {
         var engine = new OnnxLocalAiEngine();
         var snapshot = new SummarySnapshot(
-            DateTimeOffset.UtcNow,
+            TestTimestamps.Epoch,
             [new SummaryRow("region", "east", new Dictionary<string, double> { ["count"] = 10 })]);
 
         var analysis = engine.AnalyzeSummary(snapshot);
@@ -142,6 +142,6 @@ public sealed class ExtendedCapabilitiesTests
             return new SummaryRow(split[0], split[1], new Dictionary<string, double> { ["count"] = cell.Value });
         });
 
-        return new SummarySnapshot(DateTimeOffset.UtcNow.AddMinutes(minutes), [.. rows]);
+        return new SummarySnapshot(TestTimestamps.AtMinutes(minutes), [.. rows]);
     }
 }

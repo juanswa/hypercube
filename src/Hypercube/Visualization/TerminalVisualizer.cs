@@ -119,13 +119,17 @@ public static class TerminalVisualizer
             return new Dictionary<string, double>();
         }
 
+        var p50Key = MetricNameHelper.Percentile(digestMetric, 50);
+        var p95Key = MetricNameHelper.Percentile(digestMetric, 95);
+        var p99Key = MetricNameHelper.Percentile(digestMetric, 99);
+
         return new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
         {
             ["mean"] = row[meanKey],
-            ["p50"] = row[MetricNameHelper.Percentile(digestMetric, 50)],
-            ["p75"] = InterpolatePercentile(row, digestMetric, 50, 95, 75),
-            ["p95"] = row[MetricNameHelper.Percentile(digestMetric, 95)],
-            ["p99"] = row[MetricNameHelper.Percentile(digestMetric, 99)]
+            ["p50"] = row[p50Key],
+            ["p75"] = InterpolatePercentile(row, digestMetric, 50, 95, 75, p50Key, p95Key),
+            ["p95"] = row[p95Key],
+            ["p99"] = row[p99Key]
         };
     }
 
@@ -192,14 +196,10 @@ public static class TerminalVisualizer
         string key,
         out double value)
     {
-        foreach (var row in snapshot.Rows)
+        if (snapshot.TryGetRow(dimension, key, out var row))
         {
-            if (row.Dimension.Equals(dimension, StringComparison.OrdinalIgnoreCase) &&
-                row.Key.Equals(key, StringComparison.OrdinalIgnoreCase))
-            {
-                value = snapshot.PrimaryValue(row);
-                return true;
-            }
+            value = snapshot.PrimaryValue(row);
+            return true;
         }
 
         value = 0;
@@ -226,10 +226,12 @@ public static class TerminalVisualizer
         string digestMetric,
         int lowerPercentile,
         int upperPercentile,
-        int targetPercentile)
+        int targetPercentile,
+        string? lowerKey = null,
+        string? upperKey = null)
     {
-        var lower = row[MetricNameHelper.Percentile(digestMetric, lowerPercentile)];
-        var upper = row[MetricNameHelper.Percentile(digestMetric, upperPercentile)];
+        var lower = row[lowerKey ?? MetricNameHelper.Percentile(digestMetric, lowerPercentile)];
+        var upper = row[upperKey ?? MetricNameHelper.Percentile(digestMetric, upperPercentile)];
         if (upperPercentile == lowerPercentile)
         {
             return lower;

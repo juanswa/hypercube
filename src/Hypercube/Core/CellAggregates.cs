@@ -44,7 +44,16 @@ internal static class CellAggregator<T>
     public static CellAggregateState SnapshotForPersistence(CellAggregateState state) =>
         CellAggregateStateSerializer.Snapshot(state);
 
-    public static IReadOnlyDictionary<string, double> ToValues(RollupSchema<T> schema, CellAggregateState state)
+    public static IReadOnlyDictionary<string, double> ToValues(
+        RollupSchema<T> schema,
+        CellAggregateState state,
+        IReadOnlySet<string>? metricProjection = null) =>
+        ToValuesCore(schema, state, metricProjection);
+
+    private static IReadOnlyDictionary<string, double> ToValuesCore(
+        RollupSchema<T> schema,
+        CellAggregateState state,
+        IReadOnlySet<string>? metricProjection)
     {
         var metrics = schema.Metrics;
         var values = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
@@ -53,16 +62,37 @@ internal static class CellAggregator<T>
             for (var i = 0; i < metrics.Count; i++)
             {
                 var metric = metrics[i];
+                if (metricProjection is not null && !MetricIncluded(metricProjection, metric))
+                {
+                    continue;
+                }
+
                 var offset = schema.MetricValueOffsets[i];
                 switch (metric.Kind)
                 {
                     case AggregationKind.TDigest:
                     {
                         var digest = GetOrCreateDigest(state, i);
-                        values[MetricNameHelper.Mean(metric.Name)] = digest.Mean;
-                        values[MetricNameHelper.Percentile(metric.Name, 50)] = digest.Quantile(0.50);
-                        values[MetricNameHelper.Percentile(metric.Name, 95)] = digest.Quantile(0.95);
-                        values[MetricNameHelper.Percentile(metric.Name, 99)] = digest.Quantile(0.99);
+                        if (IncludeMetricName(metricProjection, MetricNameHelper.Mean(metric.Name)))
+                        {
+                            values[MetricNameHelper.Mean(metric.Name)] = digest.Mean;
+                        }
+
+                        if (IncludeMetricName(metricProjection, MetricNameHelper.Percentile(metric.Name, 50)))
+                        {
+                            values[MetricNameHelper.Percentile(metric.Name, 50)] = digest.Quantile(0.50);
+                        }
+
+                        if (IncludeMetricName(metricProjection, MetricNameHelper.Percentile(metric.Name, 95)))
+                        {
+                            values[MetricNameHelper.Percentile(metric.Name, 95)] = digest.Quantile(0.95);
+                        }
+
+                        if (IncludeMetricName(metricProjection, MetricNameHelper.Percentile(metric.Name, 99)))
+                        {
+                            values[MetricNameHelper.Percentile(metric.Name, 99)] = digest.Quantile(0.99);
+                        }
+
                         break;
                     }
 
@@ -206,4 +236,27 @@ internal static class CellAggregator<T>
         AggregationKind.Max when double.IsNegativeInfinity(raw) => 0,
         _ => raw
     };
+
+    private static bool MetricIncluded(IReadOnlySet<string> metricProjection, MetricDefinition<T> metric)
+    {
+        if (metricProjection.Contains(metric.Name))
+        {
+            return true;
+        }
+
+        return metric.Kind switch
+        {
+            AggregationKind.TDigest =>
+                metricProjection.Contains(MetricNameHelper.Mean(metric.Name)) ||
+                metricProjection.Contains(MetricNameHelper.Percentile(metric.Name, 50)) ||
+                metricProjection.Contains(MetricNameHelper.Percentile(metric.Name, 95)) ||
+                metricProjection.Contains(MetricNameHelper.Percentile(metric.Name, 99)),
+            AggregationKind.HyperLogLog =>
+                metricProjection.Contains(MetricNameHelper.UniqueCount(metric.Name)),
+            _ => false
+        };
+    }
+
+    private static bool IncludeMetricName(IReadOnlySet<string>? metricProjection, string metricName) =>
+        metricProjection is null || metricProjection.Contains(metricName);
 }

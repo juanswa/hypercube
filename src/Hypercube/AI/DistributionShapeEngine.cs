@@ -103,16 +103,18 @@ public static class DistributionShapeEngine
 
         if (meanMisleading && skew == DistributionSkew.RightSkewed)
         {
-            parts.Add($"the mean is {mean:0.##} but the median is {median:0.##}; this is right-skewed and the average is lying to you");
+            parts.Add(
+                $"mean ({mean:0.##}) exceeds median ({median:0.##}); right-skewed — use median or p95 for alerting");
         }
         else if (meanMisleading && skew == DistributionSkew.LeftSkewed)
         {
-            parts.Add($"the mean is below the median ({mean:0.##} vs {median:0.##}), indicating left skew");
+            parts.Add(
+                $"mean ({mean:0.##}) is below median ({median:0.##}); left-skewed — use median for alerting");
         }
 
         if (heavyTail)
         {
-            parts.Add("a heavy upper tail is present");
+            parts.Add("heavy upper tail — prefer p95 or p99 for SLO thresholds");
         }
 
         return string.Join("; ", parts) + ".";

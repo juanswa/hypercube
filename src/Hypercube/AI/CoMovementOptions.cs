@@ -19,4 +19,11 @@ public sealed class CoMovementOptions
 
     /// <summary>Minimum absolute correlation to include.</summary>
     public double MinAbsCorrelation { get; init; } = 0.7;
+
+    /// <summary>
+    /// Maximum active cells considered for pairwise correlation.
+    /// When exceeded, cells with the highest EWMA variance are retained.
+    /// Pairwise work is <c>O(n²)</c> in this cap (default 200 → up to ~19,900 pairs per run).
+    /// </summary>
+    public int MaxActiveCellsForPairwise { get; init; } = 200;
 }

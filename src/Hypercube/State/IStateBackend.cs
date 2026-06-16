@@ -36,4 +36,8 @@ public interface IStateBackend<TValue> where TValue : class
     /// Required for disk backends where in-memory mutations must be written back.
     /// </summary>
     void Upsert(string key, TValue value);
+
+    /// <summary>Removes a key when present.</summary>
+    /// <returns><c>true</c> when the key was removed.</returns>
+    bool TryRemove(string key);
 }

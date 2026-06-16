@@ -49,6 +49,54 @@ internal static class CellAggregateStateSerializer
         }
     }
 
+    internal static byte[] ToPayload(CellAggregateState state)
+    {
+        var snapshot = Snapshot(state);
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        writer.Write(snapshot.MetricValues.Length);
+        foreach (var value in snapshot.MetricValues)
+        {
+            writer.Write(value);
+        }
+
+        writer.Write(snapshot.SketchStates.Length);
+        foreach (var sketch in snapshot.SketchStates)
+        {
+            writer.Write(sketch.Length);
+            writer.Write(sketch);
+        }
+
+        return stream.ToArray();
+    }
+
+    internal static CellAggregateState FromPayload(byte[] payload)
+    {
+        using var stream = new MemoryStream(payload);
+        using var reader = new BinaryReader(stream);
+        var metricCount = reader.ReadInt32();
+        var metricValues = new double[metricCount];
+        for (var i = 0; i < metricCount; i++)
+        {
+            metricValues[i] = reader.ReadDouble();
+        }
+
+        var sketchCount = reader.ReadInt32();
+        var sketchStates = new byte[sketchCount][];
+        for (var i = 0; i < sketchCount; i++)
+        {
+            var length = reader.ReadInt32();
+            sketchStates[i] = reader.ReadBytes(length);
+        }
+
+        return new CellAggregateState
+        {
+            MetricValues = metricValues,
+            SketchStates = sketchStates,
+            ActiveSketches = []
+        };
+    }
+
     private static byte[][] MaterializeSketchStates(CellAggregateState state)
     {
         var length = Math.Max(state.ActiveSketches.Length, state.SketchStates.Length);

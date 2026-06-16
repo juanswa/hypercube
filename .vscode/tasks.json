@@ -1,41 +1,77 @@
 {
-    "version": "2.0.0",
-    "tasks": [
-        {
-            "label": "build",
-            "command": "dotnet",
-            "type": "process",
-            "args": [
-                "build",
-                "${workspaceFolder}/Hypercube.sln",
-                "/property:GenerateFullPaths=true",
-                "/consoleloggerparameters:NoSummary;ForceNoAlign"
-            ],
-            "problemMatcher": "$msCompile"
-        },
-        {
-            "label": "publish",
-            "command": "dotnet",
-            "type": "process",
-            "args": [
-                "publish",
-                "${workspaceFolder}/Hypercube.sln",
-                "/property:GenerateFullPaths=true",
-                "/consoleloggerparameters:NoSummary;ForceNoAlign"
-            ],
-            "problemMatcher": "$msCompile"
-        },
-        {
-            "label": "watch",
-            "command": "dotnet",
-            "type": "process",
-            "args": [
-                "watch",
-                "run",
-                "--project",
-                "${workspaceFolder}/Hypercube.sln"
-            ],
-            "problemMatcher": "$msCompile"
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "build",
+        "${workspaceFolder}/Hypercube.sln",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary;ForceNoAlign"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "test-wait-for-debugger",
+      "dependsOn": "build",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "test",
+        "${workspaceFolder}/tests/Hypercube.Tests/Hypercube.Tests.csproj",
+        "--no-build",
+        "--settings",
+        "${workspaceFolder}/tests/Hypercube.Tests/test.runsettings",
+        "--filter",
+        "${input:testFilter}"
+      ],
+      "options": {
+        "env": {
+          "VSTEST_HOST_DEBUG": "1"
         }
-    ]
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "dotnet-test",
+        "pattern": {
+          "regexp": "^Process Id: (\\d+), Name: testhost$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Host debugging is enabled",
+          "endsPattern": "Process Id: \\d+, Name: testhost"
+        }
+      }
+    },
+    {
+      "label": "publish",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "publish",
+        "${workspaceFolder}/Hypercube.sln",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary;ForceNoAlign"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "watch",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "watch",
+        "run",
+        "--project",
+        "${workspaceFolder}/Hypercube.sln"
+      ],
+      "problemMatcher": "$msCompile"
+    }
+  ]
 }

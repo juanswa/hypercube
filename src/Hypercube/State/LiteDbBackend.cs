@@ -142,6 +142,22 @@ public sealed class LiteDbBackend<TValue> : IStateBackend<TValue>, IDisposable w
         _collection.Insert(new LiteDbRecord<TValue> { Key = key, Value = value });
     }
 
+    /// <inheritdoc />
+    public bool TryRemove(string key)
+    {
+        _liveValues.TryRemove(key, out _);
+        lock (_cacheGate)
+        {
+            if (_lruNodes.TryGetValue(key, out var node))
+            {
+                _lruOrder.Remove(node);
+                _lruNodes.Remove(key);
+            }
+        }
+
+        return _collection.DeleteMany(x => x.Key == key) > 0;
+    }
+
     /// <summary>Releases the underlying LiteDB database.</summary>
     public void Dispose() => _db.Dispose();
 

@@ -22,13 +22,12 @@ public static class CellExplainer
         IReadOnlyList<SummarySnapshot>? history = null,
         string? distributionMetric = null)
     {
-        var row = current.Rows.FirstOrDefault(r =>
-            CellId.From(r).Equals(cellId, StringComparison.OrdinalIgnoreCase))
-            ?? throw new KeyNotFoundException($"Cell '{cellId}' was not found in the current snapshot.");
+        if (!current.TryGetRow(cellId, out var row))
+        {
+            throw new KeyNotFoundException($"Cell '{cellId}' was not found in the current snapshot.");
+        }
 
-        var siblings = current.Rows
-            .Where(r => r.Dimension.Equals(row.Dimension, StringComparison.OrdinalIgnoreCase))
-            .ToList();
+        var siblings = current.RowsByDimension[row.Dimension];
         var primaryValue = current.PrimaryValue(row);
         var siblingValues = siblings.Select(current.PrimaryValue).Order().ToList();
         var siblingRank = PercentileRank(primaryValue, siblingValues);
@@ -43,26 +42,22 @@ public static class CellExplainer
 
         if (previous is not null)
         {
-            var previousRow = previous.Rows.FirstOrDefault(r =>
-                CellId.From(r).Equals(cellId, StringComparison.OrdinalIgnoreCase));
-            previousValue = previousRow is null ? 0 : previous.PrimaryValue(previousRow);
+            previousValue = previous.TryGetRow(cellId, out var previousRow)
+                ? previous.PrimaryValue(previousRow)
+                : 0;
             trendDelta = primaryValue - previousValue;
             ewmaBaseline = (0.35 * primaryValue) + (0.65 * previousValue.Value);
 
-            var prevSiblings = previous.Rows
-                .Where(r => r.Dimension.Equals(row.Dimension, StringComparison.OrdinalIgnoreCase))
-                .Select(previous.PrimaryValue)
-                .ToList();
-            if (prevSiblings.Count > 1)
+            if (previous.RowsByDimension.TryGetValue(row.Dimension, out var previousSiblings) &&
+                previousSiblings.Count > 1)
             {
-                var avg = prevSiblings.Average();
-                var stdDev = StdDev(prevSiblings);
-                zScore = stdDev <= 1e-9 ? 0 : (primaryValue - avg) / stdDev;
+                var (mean, stdDev) = MeanAndPopulationStdDev(previousSiblings.Select(previous.PrimaryValue));
+                zScore = stdDev <= 1e-9 ? 0 : (primaryValue - mean) / stdDev;
             }
 
             var drivers = DeterministicInsightEngine.AnalyzeDrivers(previous, current, topN: siblings.Count);
             driver = drivers.TopContributors.FirstOrDefault(d =>
-                d.CellId.Equals(cellId, StringComparison.OrdinalIgnoreCase));
+                CellId.Equals(d.CellId, cellId));
         }
 
         DistributionShapeCallout? shape = distributionMetric is null
@@ -158,21 +153,25 @@ public static class CellExplainer
         return (double)below / orderedValues.Count;
     }
 
-    private static double StdDev(List<double> values)
+    private static (double Mean, double StdDev) MeanAndPopulationStdDev(IEnumerable<double> values)
     {
-        if (values.Count == 0)
-        {
-            return 0;
-        }
+        double mean = 0;
+        double sumSquaredDeviations = 0;
+        long count = 0;
 
-        var avg = values.Average();
-        double sumSquared = 0;
         foreach (var value in values)
         {
-            var delta = value - avg;
-            sumSquared += delta * delta;
+            count++;
+            var delta = value - mean;
+            mean += delta / count;
+            sumSquaredDeviations += delta * (value - mean);
         }
 
-        return Math.Sqrt(sumSquared / values.Count);
+        if (count == 0)
+        {
+            return (0, 0);
+        }
+
+        return (mean, count == 1 ? 0 : Math.Sqrt(sumSquaredDeviations / count));
     }
 }

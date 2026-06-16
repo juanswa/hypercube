@@ -18,7 +18,7 @@ public sealed class InsightEngineTests
     public void RankInterestingCells_ReturnsTopSignals()
     {
         var previous = new SummarySnapshot(
-            DateTimeOffset.UtcNow.AddMinutes(-5),
+            TestTimestamps.AtMinutes(0),
             [
                 Row("channel", "sms", 100, 10),
                 Row("channel", "email", 100, 20),
@@ -26,7 +26,7 @@ public sealed class InsightEngineTests
             ]);
 
         var current = new SummarySnapshot(
-            DateTimeOffset.UtcNow,
+            TestTimestamps.AtMinutes(5),
             [
                 Row("channel", "sms", 500, 20),
                 Row("channel", "email", 90, 30),
@@ -43,14 +43,14 @@ public sealed class InsightEngineTests
     public void AnalyzeDrivers_AttributesTopDeltaContributors()
     {
         var previous = new SummarySnapshot(
-            DateTimeOffset.UtcNow.AddMinutes(-5),
+            TestTimestamps.AtMinutes(0),
             [
                 Row("channel", "sms", 100, 10),
                 Row("channel", "email", 100, 20)
             ]);
 
         var current = new SummarySnapshot(
-            DateTimeOffset.UtcNow,
+            TestTimestamps.AtMinutes(5),
             [
                 Row("channel", "sms", 40, 5),
                 Row("channel", "email", 95, 18)
@@ -68,7 +68,7 @@ public sealed class InsightEngineTests
     {
         var engine = new RuleBasedLocalAiEngine();
         var snapshot = new SummarySnapshot(
-            DateTimeOffset.UtcNow,
+            TestTimestamps.AtMinutes(5),
             [
                 Row("status", "delivered", 84, 40),
                 Row("status", "failed", 16, 2)
@@ -85,14 +85,14 @@ public sealed class InsightEngineTests
     public void DetectSimpsonsParadox_FlagsRateReversalWhenWeightsShift()
     {
         var previous = new SummarySnapshot(
-            DateTimeOffset.UtcNow.AddMinutes(-5),
+            TestTimestamps.AtMinutes(0),
             [
                 Row("channel", "sms", 100, 10),
                 Row("channel", "email", 100, 50)
             ]);
 
         var current = new SummarySnapshot(
-            DateTimeOffset.UtcNow,
+            TestTimestamps.AtMinutes(5),
             [
                 Row("channel", "sms", 150, 18),
                 Row("channel", "email", 50, 27.5)

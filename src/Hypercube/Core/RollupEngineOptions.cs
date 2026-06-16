@@ -2,6 +2,7 @@ namespace Hypercube.Core;
 
 /// <summary>
 /// Runtime options that control memory use and spill behavior for <see cref="RollupEngine{T}"/>.
+/// Prefer <see cref="EngineConfiguration"/> for version 1.1 lifecycle settings.
 /// </summary>
 public sealed class RollupEngineOptions
 {

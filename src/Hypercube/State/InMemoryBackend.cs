@@ -30,4 +30,7 @@ public sealed class InMemoryBackend<TValue> : IStateBackend<TValue> where TValue
 
     /// <inheritdoc />
     public void Upsert(string key, TValue value) => _store[key] = value;
+
+    /// <inheritdoc />
+    public bool TryRemove(string key) => _store.TryRemove(key, out _);
 }

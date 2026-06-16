@@ -136,6 +136,6 @@ public sealed class TerminalVisualizerTests
         var rows = cells.Select(cell =>
             new SummaryRow(cell.Dimension, cell.Key, new Dictionary<string, double> { ["count"] = cell.Value }));
 
-        return new SummarySnapshot(DateTimeOffset.UtcNow.AddMinutes(minute), [.. rows]);
+        return new SummarySnapshot(TestTimestamps.AtMinutes(minute), [.. rows]);
     }
 }

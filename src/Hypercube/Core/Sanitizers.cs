@@ -16,12 +16,7 @@ public static class Sanitizers
     /// <param name="value">Raw input value.</param>
     public static string Normalize(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return Fallback;
-        }
-
-        return value.Trim().ToLowerInvariant();
+        return RollupObjectPools.InternNormalizedKey(value, Fallback);
     }
 
     /// <summary>

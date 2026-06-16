@@ -56,13 +56,13 @@ public static class DeterministicInsightEngine
         var prevMap = previous.Rows.ToDictionary(
             CellId.From,
             previous.PrimaryValue,
-            StringComparer.OrdinalIgnoreCase);
+            CellId.Comparer);
         var currMap = current.Rows.ToDictionary(
             CellId.From,
             current.PrimaryValue,
-            StringComparer.OrdinalIgnoreCase);
+            CellId.Comparer);
 
-        var allCellIds = prevMap.Keys.Concat(currMap.Keys).Distinct(StringComparer.OrdinalIgnoreCase);
+        var allCellIds = prevMap.Keys.Concat(currMap.Keys).Distinct(CellId.Comparer);
         var contributions = new List<DriverContribution>();
 
         var totalPrevious = prevMap.Values.Sum();
@@ -105,7 +105,7 @@ public static class DeterministicInsightEngine
         var metricNames = metrics ?? previous.Rows
             .SelectMany(row => row.Metrics.Keys)
             .Concat(current.Rows.SelectMany(row => row.Metrics.Keys))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(CellId.Comparer)
             .ToList();
 
         var analyses = new List<MetricDriverAnalysis>(metricNames.Count);
@@ -139,17 +139,18 @@ public static class DeterministicInsightEngine
         string countMetric = "count",
         string rateNumeratorMetric = "signal")
     {
-        var previousByCell = previous.Rows.ToDictionary(CellId.From, x => x, StringComparer.OrdinalIgnoreCase);
-        var currentByCell = current.Rows.ToDictionary(CellId.From, x => x, StringComparer.OrdinalIgnoreCase);
+        var previousByCell = previous.Rows.ToDictionary(CellId.From, x => x, CellId.Comparer);
+        var currentByCell = current.Rows.ToDictionary(CellId.From, x => x, CellId.Comparer);
 
         var results = new List<SimpsonParadoxSignal>();
-        foreach (var dimensionGroup in current.Rows.GroupBy(r => r.Dimension, StringComparer.OrdinalIgnoreCase))
+        foreach (var (dimension, currentSiblings) in current.RowsByDimension)
         {
-            var dimension = dimensionGroup.Key;
-            var childIds = dimensionGroup
+            var childIds = currentSiblings
                 .Select(CellId.From)
-                .Concat(previous.Rows.Where(r => r.Dimension.Equals(dimension, StringComparison.OrdinalIgnoreCase)).Select(CellId.From))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Concat(previous.RowsByDimension.TryGetValue(dimension, out var previousSiblings)
+                    ? previousSiblings.Select(CellId.From)
+                    : [])
+                .Distinct(CellId.Comparer)
                 .ToList();
 
             if (childIds.Count < 2)
@@ -222,9 +223,8 @@ public static class DeterministicInsightEngine
         SummarySnapshot snapshot,
         List<InterestingCellInsight> insights)
     {
-        foreach (var dimensionGroup in snapshot.Rows.GroupBy(x => x.Dimension, StringComparer.OrdinalIgnoreCase))
+        foreach (var (_, rows) in snapshot.RowsByDimension)
         {
-            var rows = dimensionGroup.ToList();
             var total = rows.Sum(snapshot.PrimaryValue);
             if (total == 0 || rows.Count == 0)
             {
@@ -257,7 +257,7 @@ public static class DeterministicInsightEngine
         var prevByCell = previousRows.ToDictionary(
             CellId.From,
             previousSnapshot.PrimaryValue,
-            StringComparer.OrdinalIgnoreCase);
+            CellId.Comparer);
         var prevAverage = previousRows.Count == 0 ? 0 : previousRows.Average(previousSnapshot.PrimaryValue);
         var prevStdDev = StdDev(previousRows.Select(previousSnapshot.PrimaryValue));
 

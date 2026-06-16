@@ -46,7 +46,8 @@ public sealed class AdvancedInsightTests
         Assert.NotNull(callout);
         Assert.Equal(DistributionSkew.RightSkewed, callout!.Skew);
         Assert.True(callout.MeanMisleading);
-        Assert.Contains("average is lying", callout.Summary);
+        Assert.Contains("right-skewed", callout.Summary);
+        Assert.Contains("alerting", callout.Summary);
     }
 
     [Fact]
@@ -111,6 +112,6 @@ public sealed class AdvancedInsightTests
             return new SummaryRow(split[0], split[1], new Dictionary<string, double> { ["count"] = cell.Value });
         });
 
-        return new SummarySnapshot(DateTimeOffset.UtcNow.AddMinutes(minutes), [.. rows]);
+        return new SummarySnapshot(TestTimestamps.AtMinutes(minutes), [.. rows]);
     }
 }

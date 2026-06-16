@@ -5,6 +5,11 @@ namespace Hypercube.AI;
 
 /// <summary>
 /// Discovers cells that co-move or move inversely across snapshot history using EWMA-smoothed series.
+/// <para>
+/// Pairwise correlation is <c>O(n²)</c> in the number of active cells, capped by
+/// <see cref="CoMovementOptions.MaxActiveCellsForPairwise"/> (default 200). Each surviving pair
+/// also evaluates up to <c>2 × MaxLag + 1</c> lag offsets.
+/// </para>
 /// </summary>
 public static class CoMovementEngine
 {
@@ -38,21 +43,33 @@ public static class CoMovementEngine
 
         var cellIds = history
             .SelectMany(snapshot => snapshot.Rows.Select(CellId.From))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(CellId.Comparer)
             .ToList();
 
-        var seriesByCell = cellIds.ToDictionary(
-            cellId => cellId,
-            cellId => BuildEwmaSeries(history, cellId, options.EwmaAlpha),
-            StringComparer.OrdinalIgnoreCase);
+        var seriesByCell = new Dictionary<string, double[]>(cellIds.Count, CellId.Comparer);
+        var activeCellIds = new List<string>(cellIds.Count);
+        foreach (var cellId in cellIds)
+        {
+            var series = BuildEwmaSeries(history, cellId, options.EwmaAlpha);
+            if (IsEffectivelyZeroSeries(series))
+            {
+                continue;
+            }
 
-        var activeCellIds = cellIds
-            .Where(cellId => !IsEffectivelyZeroSeries(seriesByCell[cellId]))
-            .ToList();
+            seriesByCell[cellId] = series;
+            activeCellIds.Add(cellId);
+        }
 
         if (activeCellIds.Count < 2)
         {
             return [];
+        }
+
+        if (activeCellIds.Count > options.MaxActiveCellsForPairwise)
+        {
+            activeCellIds = [.. activeCellIds
+                .OrderByDescending(cellId => SeriesVariance(seriesByCell[cellId]))
+                .Take(options.MaxActiveCellsForPairwise)];
         }
 
         var pairs = new ConcurrentBag<CoMovementPair>();
@@ -103,8 +120,8 @@ public static class CoMovementEngine
     {
         return [.. DiscoverPairs(history, maxLag, topN: history.Count * 2, minAbsCorrelation)
             .Where(pair =>
-                pair.CellId.Equals(cellId, StringComparison.OrdinalIgnoreCase) ||
-                pair.OtherCellId.Equals(cellId, StringComparison.OrdinalIgnoreCase))
+                CellId.Equals(pair.CellId, cellId) ||
+                CellId.Equals(pair.OtherCellId, cellId))
             .Take(topN)];
     }
 
@@ -112,10 +129,7 @@ public static class CoMovementEngine
     {
         var raw = history
             .Select(snapshot =>
-            {
-                var row = snapshot.Rows.FirstOrDefault(r => CellId.From(r).Equals(cellId, StringComparison.OrdinalIgnoreCase));
-                return row is null ? 0 : snapshot.PrimaryValue(row);
-            })
+                snapshot.TryGetRow(cellId, out var row) ? snapshot.PrimaryValue(row) : 0)
             .ToArray();
 
         if (raw.Length == 0)
@@ -144,6 +158,24 @@ public static class CoMovementEngine
         }
 
         return true;
+    }
+
+    private static double SeriesVariance(double[] series)
+    {
+        if (series.Length == 0)
+        {
+            return 0;
+        }
+
+        var mean = series.Average();
+        var variance = 0d;
+        foreach (var value in series)
+        {
+            var delta = value - mean;
+            variance += delta * delta;
+        }
+
+        return variance / series.Length;
     }
 
     private static (double Correlation, int Lag) BestLagCorrelation(double[] left, double[] right, int maxLag)
