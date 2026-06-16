@@ -8,7 +8,7 @@ public sealed class TerminalVisualizerTests
         var sparkline = TerminalVisualizer.RenderSparkline([1d, 3d, 5d, 2d, 8d]);
 
         Assert.Equal(5, sparkline.Length);
-        Assert.All(sparkline, ch => Assert.Contains(ch, " ▂▃▄▅▆▇█"));
+        Assert.All(sparkline, ch => Assert.Contains(ch, " .:-=+*#@"));
         Assert.True(sparkline[^1] >= sparkline[0]);
     }
 
@@ -33,8 +33,34 @@ public sealed class TerminalVisualizerTests
 
         Assert.Contains("Distribution Shape: latency", output);
         Assert.Contains("p50", output);
-        Assert.Contains("█", output);
+        Assert.Contains("#", output);
         Assert.Contains("320.12", output);
+    }
+
+    [Fact]
+    public void RenderHistogram_CompactMode_OmitsDecorations()
+    {
+        var output = TerminalVisualizer.RenderHistogram(
+            "latency",
+            new Dictionary<string, double> { ["p95"] = 46.1 },
+            maxBarWidth: 8,
+            compact: true);
+
+        Assert.DoesNotContain("Distribution Shape", output);
+        Assert.Contains("p95", output);
+        Assert.Contains("[46.1]", output);
+    }
+
+    [Fact]
+    public void FormatDimensionKey_StripsWindowSuffix()
+    {
+        Assert.Equal("sms", TerminalVisualizer.FormatDimensionKey("sms@20260616193000"));
+    }
+
+    [Fact]
+    public void FormatCellId_UsesShortLabels()
+    {
+        Assert.Equal("region/apac", TerminalVisualizer.FormatCellId("region:apac@20260616193000"));
     }
 
     [Fact]

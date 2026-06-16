@@ -8,7 +8,8 @@ namespace Hypercube.Visualization;
 /// </summary>
 public static class TerminalVisualizer
 {
-    private static readonly char[] SparkBlocks = [' ', ' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+  // ASCII-only blocks render reliably across Windows and Unix terminals.
+    private static readonly char[] SparkBlocks = [' ', '.', ':', '-', '=', '+', '*', '#', '@'];
 
     /// <summary>
     /// Renders a single-line sparkline from a numeric series.
@@ -60,7 +61,8 @@ public static class TerminalVisualizer
     public static string RenderHistogram(
         string metricName,
         IReadOnlyDictionary<string, double> buckets,
-        int maxBarWidth = 40)
+        int maxBarWidth = 40,
+        bool compact = false)
     {
         if (buckets.Count == 0)
         {
@@ -68,24 +70,54 @@ public static class TerminalVisualizer
         }
 
         var maxVal = buckets.Values.Max();
-        var lines = new List<string>
+        var lines = new List<string>();
+        if (!compact)
         {
-            string.Empty,
-            $"Distribution Shape: {metricName}",
-            new string('-', maxBarWidth + 20)
-        };
+            lines.Add(string.Empty);
+            lines.Add($"Distribution Shape: {metricName}");
+            lines.Add(new string('-', maxBarWidth + 20));
+        }
 
+        var labelWidth = compact ? 5 : 8;
         foreach (var (label, value) in buckets)
         {
             var barLength = maxVal > 0
                 ? (int)Math.Round(value / maxVal * maxBarWidth)
                 : 0;
-            var bar = new string('█', barLength);
-            lines.Add($"{label.PadRight(8)} | {bar.PadRight(maxBarWidth)} [{value.ToString("F2", CultureInfo.InvariantCulture)}]");
+            var bar = new string('#', barLength);
+            var valueText = value.ToString(compact ? "0.##" : "F2", CultureInfo.InvariantCulture);
+            lines.Add($"{label.PadRight(labelWidth)} {bar} [{valueText}]");
         }
 
-        lines.Add(new string('-', maxBarWidth + 20));
+        if (!compact)
+        {
+            lines.Add(new string('-', maxBarWidth + 20));
+        }
+
         return string.Join(Environment.NewLine, lines);
+    }
+
+    /// <summary>
+    /// Shortens a dimension key for terminal display by removing window suffixes.
+    /// </summary>
+    public static string FormatDimensionKey(string key)
+    {
+        var separator = key.IndexOf('@');
+        return separator > 0 ? key[..separator] : key;
+    }
+
+    /// <summary>
+    /// Shortens a canonical cell id (<c>dimension:key</c>) for terminal display.
+    /// </summary>
+    public static string FormatCellId(string cellId)
+    {
+        var separator = cellId.IndexOf(':');
+        if (separator <= 0 || separator >= cellId.Length - 1)
+        {
+            return cellId;
+        }
+
+        return $"{cellId[..separator]}/{FormatDimensionKey(cellId[(separator + 1)..])}";
     }
 
     /// <summary>

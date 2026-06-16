@@ -73,7 +73,7 @@ public sealed class InsightEngineTests
         AiAnalysisResult? analysis = engine.AnalyzeSummary(snapshot);
         var narrative = engine.GenerateNarrative(snapshot, analysis);
 
-        Assert.Contains("Top dimensions", narrative);
+        Assert.Contains("Busiest right now", narrative);
         Assert.NotEmpty(analysis.RecommendedInsights);
     }
 

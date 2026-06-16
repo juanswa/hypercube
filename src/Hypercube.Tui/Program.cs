@@ -9,7 +9,7 @@ if (!AnsiConsole.Profile.Capabilities.Interactive)
 
 AnsiConsole.Write(new FigletText("Hypercube").Color(Color.Cyan1));
 AnsiConsole.MarkupLine("[grey]Live rollup dashboard — synthetic stream demo[/]");
-AnsiConsole.MarkupLine("[grey]Press [bold]Ctrl+C[/] or wait for auto-stop.[/]");
+AnsiConsole.MarkupLine("[grey]Press [bold]Ctrl+C[/] or wait for auto-stop. Alerts: [bold]↑/↓[/] scroll, Home/End jump.[/]");
 AnsiConsole.WriteLine();
 
 var refreshMs = 500;

@@ -6,6 +6,7 @@ using Hypercube.Models;
 using Hypercube.Tui.Demo;
 using Hypercube.Visualization;
 using Spectre.Console;
+using Spectre.Console.Rendering;
 
 namespace Hypercube.Tui.Dashboard;
 
@@ -18,7 +19,8 @@ public sealed class LiveRollupDashboard
     private const string DigestMetric = "latency";
     private static readonly string LatencyMeanKey = MetricNameHelper.Mean(DigestMetric);
     private static readonly string LatencyP95Key = MetricNameHelper.Percentile(DigestMetric, 95);
-    private static readonly string[] InsightsSpinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    private static readonly string[] InsightsSpinner = ["|", "/", "-", "\\"];
+    private static readonly TimeSpan InsightsRefreshInterval = TimeSpan.FromSeconds(2);
 
     private readonly RollupEngine<DemoEvent> _engine;
     private readonly CachedLocalAiEngine _ai;
@@ -28,9 +30,14 @@ public sealed class LiveRollupDashboard
     private SummarySnapshot? _previousSnapshot;
     private readonly InsightsRefreshWorker _insightsWorker;
     private readonly System.Threading.Lock _insightsSync = new();
-    private InsightsPanelCache _insightsCache = InsightsPanelCache.Waiting;
+    private InsightsPanelCache? _insightsCache;
+    private bool _hasInsights;
+    private List<string> _alertMarkupLines = [];
+    private int _alertsScrollOffset;
+    private bool _alertsPinnedToBottom = true;
     private long _eventsIngested;
     private long _refreshFrame;
+    private DateTimeOffset _lastInsightsScheduledAt;
     private RollupDiagnosticsSnapshot? _previousDiagnostics;
     private DateTimeOffset _previousDiagnosticsAt;
 
@@ -55,7 +62,23 @@ public sealed class LiveRollupDashboard
             {
                 lock (_insightsSync)
                 {
-                    _insightsCache = BuildInsightsPanelCache(snapshot, analysis);
+                    try
+                    {
+                        var built = BuildInsightsPanelCache(snapshot, analysis);
+                        _insightsCache = built;
+                        _alertMarkupLines = built.AlertLines;
+                        if (_alertsPinnedToBottom || !_hasInsights)
+                        {
+                            _alertsScrollOffset = int.MaxValue;
+                        }
+
+                        _hasInsights = true;
+                    }
+                    catch
+                    {
+                        _insightsCache = InsightsPanelCache.Error;
+                        _hasInsights = true;
+                    }
                 }
             },
             _engine.Diagnostics);
@@ -90,12 +113,18 @@ public sealed class LiveRollupDashboard
     public void Run(TimeSpan refreshInterval, TimeSpan? duration = null, CancellationToken cancellationToken = default)
     {
         var started = _engine.Clock.UtcNow;
+        var insightsLayout = new Layout("Insights")
+            .SplitRows(
+                new Layout("InsightsSnapshot").Size(5),
+                new Layout("InsightsAlerts"),
+                new Layout("InsightsLatency").Size(8));
+
         var layout = new Layout("Root")
             .SplitRows(
                 new Layout("Header").Size(3),
                 new Layout("Body").SplitColumns(
                     new Layout("Cells"),
-                    new Layout("Insights").Size(48)));
+                    insightsLayout.Size(48)));
 
         AnsiConsole.Live(layout)
             .AutoClear(false)
@@ -116,9 +145,14 @@ public sealed class LiveRollupDashboard
                     ScheduleInsightsRefresh(snapshot);
 
                     _refreshFrame++;
+                    var alertsViewport = AlertsViewportLines();
+                    ProcessInsightsScrollInput(alertsViewport);
+
                     layout["Header"].Update(BuildHeader(snapshot, started));
                     layout["Cells"].Update(BuildCellsTable(snapshot));
-                    layout["Insights"].Update(GetInsightsPanel());
+                    layout["InsightsSnapshot"].Update(GetSnapshotPanel());
+                    layout["InsightsAlerts"].Update(GetAlertsPanel(alertsViewport));
+                    layout["InsightsLatency"].Update(GetLatencyPanel());
 
                     ctx.Refresh();
                     Thread.Sleep(refreshInterval);
@@ -164,21 +198,146 @@ public sealed class LiveRollupDashboard
     {
         var previous = _previousSnapshot;
         _previousSnapshot = snapshot;
+
+        var now = _engine.Clock.UtcNow;
+        if (now - _lastInsightsScheduledAt < InsightsRefreshInterval)
+        {
+            return;
+        }
+
+        _lastInsightsScheduledAt = now;
         _insightsWorker.Schedule(snapshot, previous);
     }
 
-    private Panel GetInsightsPanel()
+    private int AlertsViewportLines()
     {
-        if (_insightsWorker.IsInFlight)
-        {
-            return InsightsPanelCache.Thinking.Panel;
-        }
+        var height = Math.Max(AnsiConsole.Profile.Height, 24);
+        return Math.Clamp(height - 20, 6, 18);
+    }
 
-        lock (_insightsSync)
+    private void ProcessInsightsScrollInput(int viewportHeight)
+    {
+        while (Console.KeyAvailable)
         {
-            return _insightsCache.Panel;
+            var key = Console.ReadKey(intercept: true);
+            var maxOffset = Math.Max(0, _alertMarkupLines.Count - viewportHeight);
+            switch (key.Key)
+            {
+                case ConsoleKey.UpArrow:
+                case ConsoleKey.PageUp:
+                    _alertsScrollOffset = Math.Max(0, _alertsScrollOffset - (key.Key == ConsoleKey.PageUp ? 3 : 1));
+                    _alertsPinnedToBottom = false;
+                    break;
+                case ConsoleKey.DownArrow:
+                case ConsoleKey.PageDown:
+                    _alertsScrollOffset = Math.Min(
+                        maxOffset,
+                        _alertsScrollOffset + (key.Key == ConsoleKey.PageDown ? 3 : 1));
+                    _alertsPinnedToBottom = _alertsScrollOffset >= maxOffset;
+                    break;
+                case ConsoleKey.Home:
+                    _alertsScrollOffset = 0;
+                    _alertsPinnedToBottom = false;
+                    break;
+                case ConsoleKey.End:
+                    _alertsScrollOffset = maxOffset;
+                    _alertsPinnedToBottom = true;
+                    break;
+            }
         }
     }
+
+    private Panel GetSnapshotPanel()
+    {
+        lock (_insightsSync)
+        {
+            if (_hasInsights && _insightsCache?.Snapshot is not null)
+            {
+                return WrapInsightsSection(_insightsCache.Snapshot, " Snapshot ");
+            }
+        }
+
+        if (_insightsWorker.IsInFlight)
+        {
+            return WrapInsightsSection(InsightsPanelCache.ThinkingContent, " Snapshot ");
+        }
+
+        return WrapInsightsSection(InsightsPanelCache.WaitingContent, " Snapshot ");
+    }
+
+    private Panel GetAlertsPanel(int viewportHeight)
+    {
+        lock (_insightsSync)
+        {
+            if (_hasInsights && _alertMarkupLines.Count > 0)
+            {
+                return BuildScrollableAlertsPanel(viewportHeight);
+            }
+        }
+
+        if (_insightsWorker.IsInFlight)
+        {
+            return WrapInsightsSection(new Markup("[grey]Refreshing alerts...[/]"), " Alerts ");
+        }
+
+        return WrapInsightsSection(new Markup("[grey]Waiting for alerts...[/]"), " Alerts ");
+    }
+
+    private Panel GetLatencyPanel()
+    {
+        lock (_insightsSync)
+        {
+            if (_hasInsights && _insightsCache?.Latency is not null)
+            {
+                return WrapInsightsSection(_insightsCache.Latency, " Latency ");
+            }
+        }
+
+        return WrapInsightsSection(new Markup("[grey]—[/]"), " Latency ");
+    }
+
+    private Panel BuildScrollableAlertsPanel(int viewportHeight)
+    {
+        var maxOffset = Math.Max(0, _alertMarkupLines.Count - viewportHeight);
+        if (_alertsPinnedToBottom)
+        {
+            _alertsScrollOffset = maxOffset;
+        }
+        else
+        {
+            _alertsScrollOffset = Math.Clamp(_alertsScrollOffset, 0, maxOffset);
+        }
+
+        var visible = _alertMarkupLines
+            .Skip(_alertsScrollOffset)
+            .Take(viewportHeight)
+            .ToList();
+
+        var header = " Alerts ";
+        if (_alertMarkupLines.Count > viewportHeight)
+        {
+            var from = _alertsScrollOffset + 1;
+            var to = _alertsScrollOffset + visible.Count;
+            header = $" Alerts {from}-{to}/{_alertMarkupLines.Count} ↑↓ ";
+        }
+
+        var body = visible.Count == 0
+            ? "[grey]No alerts.[/]"
+            : string.Join(Environment.NewLine, visible);
+
+        return new Panel(new Markup(body))
+        {
+            Border = BoxBorder.Rounded,
+            Header = new PanelHeader(header)
+        };
+    }
+
+    private static Panel WrapInsightsSection(IRenderable content, string header) =>
+        new(content)
+        {
+            Border = BoxBorder.Rounded,
+            Header = new PanelHeader(header)
+        };
 
     private Panel BuildHeader(SummarySnapshot snapshot, DateTimeOffset started)
     {
@@ -258,10 +417,10 @@ public sealed class LiveRollupDashboard
 
             table.AddRow(
                 Markup.Escape(row.Dimension),
-                Markup.Escape(row.Key),
+                Markup.Escape(TerminalVisualizer.FormatDimensionKey(row.Key)),
                 row.Count.ToString("0"),
                 row.SignalCount.ToString("0"),
-                string.IsNullOrEmpty(trend) ? "-" : $"[cyan]{trend}[/]",
+                string.IsNullOrEmpty(trend) ? "-" : $"[cyan]{Markup.Escape(trend)}[/]",
                 p95);
         }
 
@@ -273,69 +432,158 @@ public sealed class LiveRollupDashboard
         return new Panel(table)
         {
             Border = BoxBorder.Rounded,
-            Header = new PanelHeader(" Dimension Cells ")
+            Header = new PanelHeader($" Dimension Cells  {PlainLanguageInsights.CellsTableLegend} ")
         };
     }
 
     private InsightsPanelCache BuildInsightsPanelCache(SummarySnapshot snapshot, AiAnalysisResult analysis)
     {
-        var builder = new System.Text.StringBuilder();
+        const int summaryWrapWidth = 40;
+        const int alertWrapWidth = 38;
+        var snapshotLines = WrapText(_ai.GenerateNarrative(snapshot, analysis), summaryWrapWidth);
+        IRenderable snapshotContent = new Rows(
+            new Markup("[bold]What's happening[/]"),
+            new Markup(Markup.Escape(snapshotLines)));
 
-        builder.AppendLine("[bold]Narrative[/]");
-        builder.AppendLine(Markup.Escape(_ai.GenerateNarrative(snapshot, analysis)));
-        builder.AppendLine();
+        var highlights = SelectTopInsights(analysis);
+        var alertLines = BuildAlertMarkupLines(highlights, alertWrapWidth);
 
-        if (analysis.TopInterestingCells.Count > 0)
-        {
-            builder.AppendLine("[bold]Interesting[/]");
-            foreach (var insight in analysis.TopInterestingCells.Take(4))
-            {
-                builder.AppendLine(
-                    $"• [yellow]{Markup.Escape(insight.CellId)}[/] [grey]{insight.Kind}[/] [cyan]{insight.Score:0.##}[/]");
-            }
-
-            builder.AppendLine();
-        }
-
+        IRenderable? latencyContent = null;
         var digestRow = snapshot.Rows.FirstOrDefault(row => row.Metrics.ContainsKey(LatencyMeanKey));
         var shapeRow = digestRow is null ? null : DistributionShapeEngine.AnalyzeRow(digestRow, DigestMetric);
 
         if (shapeRow is not null && digestRow is not null)
         {
-            builder.AppendLine("[bold]Distribution[/]");
-            builder.AppendLine(Markup.Escape(shapeRow.Summary));
             var buckets = TerminalVisualizer.ExtractDigestBuckets(digestRow, DigestMetric);
-            builder.AppendLine(Markup.Escape(TerminalVisualizer.RenderHistogram(DigestMetric, buckets, maxBarWidth: 20)));
+            latencyContent = new Rows(
+                new Markup(Markup.Escape(WrapText(
+                    PlainLanguageInsights.WriteLatencySummary(shapeRow),
+                    summaryWrapWidth))),
+                new Markup(Markup.Escape(
+                    TerminalVisualizer.RenderHistogram(DigestMetric, buckets, maxBarWidth: 12, compact: true))));
         }
 
-        if (builder.Length == 0)
+        if (snapshot.Rows.Count == 0)
         {
-            builder.Append("[grey]Waiting for data...[/]");
+            snapshotContent = new Markup("[grey]Waiting for data...[/]");
+            alertLines = [];
+            latencyContent = null;
         }
 
-        var panel = new Panel(new Markup(builder.ToString().TrimEnd()))
-        {
-            Border = BoxBorder.Rounded,
-            Header = new PanelHeader(" AI Insights ")
-        };
-
-        return new InsightsPanelCache(panel);
+        return new InsightsPanelCache(snapshotContent, alertLines, latencyContent);
     }
 
-    private sealed class InsightsPanelCache(Panel panel)
+    private static List<string> BuildAlertMarkupLines(
+        IReadOnlyList<InterestingCellInsight> highlights,
+        int wrapWidth)
     {
-        public Panel Panel { get; } = panel;
-
-        public static InsightsPanelCache Waiting { get; } = new(new Panel(new Markup("[grey]Waiting for first analysis...[/]"))
+        var lines = new List<string>();
+        foreach (var insight in highlights)
         {
-            Border = BoxBorder.Rounded,
-            Header = new PanelHeader(" AI Insights ")
-        });
+            if (lines.Count > 0)
+            {
+                lines.Add(string.Empty);
+            }
 
-        public static InsightsPanelCache Thinking { get; } = new(new Panel(new Markup("[grey]AI thinking...[/]"))
+            var headline = PlainLanguageInsights.WriteAlertHeadline(insight);
+            var body = PlainLanguageInsights.WriteAlertBody(insight);
+            var combined = $"{headline} — {body}";
+            if (combined.Length <= wrapWidth + 10)
+            {
+                lines.Add($"[yellow]⚠ {Markup.Escape(combined)}[/]");
+                continue;
+            }
+
+            lines.Add($"[yellow]⚠ {Markup.Escape(headline)}[/]");
+            foreach (var line in WrapText(body, wrapWidth).Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries))
+            {
+                lines.Add(Markup.Escape(line));
+            }
+        }
+
+        return lines;
+    }
+
+    private static IReadOnlyList<InterestingCellInsight> SelectTopInsights(AiAnalysisResult analysis)
+    {
+        var ranked = analysis.TopInterestingCells
+            .GroupBy(static insight => insight.CellId, CellId.Comparer)
+            .Select(static group => group.OrderByDescending(static i => i.Score).First())
+            .OrderByDescending(static insight => insight.Score);
+
+        var selected = new List<InterestingCellInsight>();
+        var kindCounts = new Dictionary<InsightKind, int>();
+        foreach (var insight in ranked)
         {
-            Border = BoxBorder.Rounded,
-            Header = new PanelHeader(" AI Insights ")
-        });
+            if (selected.Count >= 3)
+            {
+                break;
+            }
+
+            kindCounts.TryGetValue(insight.Kind, out var count);
+            if (count >= 2)
+            {
+                continue;
+            }
+
+            kindCounts[insight.Kind] = count + 1;
+            selected.Add(insight);
+        }
+
+        return selected;
+    }
+
+    private static string WrapText(string text, int width)
+    {
+        if (width <= 0 || text.Length <= width)
+        {
+            return text;
+        }
+
+        var lines = new List<string>();
+        var current = new System.Text.StringBuilder();
+        foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (current.Length == 0)
+            {
+                current.Append(word);
+                continue;
+            }
+
+            if (current.Length + 1 + word.Length <= width)
+            {
+                current.Append(' ').Append(word);
+            }
+            else
+            {
+                lines.Add(current.ToString());
+                current.Clear().Append(word);
+            }
+        }
+
+        if (current.Length > 0)
+        {
+            lines.Add(current.ToString());
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private sealed class InsightsPanelCache(IRenderable snapshot, List<string> alertLines, IRenderable? latency)
+    {
+        public IRenderable Snapshot { get; } = snapshot;
+
+        public List<string> AlertLines { get; } = alertLines;
+
+        public IRenderable? Latency { get; } = latency;
+
+        public static IRenderable WaitingContent { get; } = new Markup("[grey]Waiting for first analysis...[/]");
+
+        public static IRenderable ThinkingContent { get; } = new Markup("[grey]AI thinking...[/]");
+
+        public static InsightsPanelCache Error { get; } = new(
+            new Markup("[red]Insight panel failed to render.[/]"),
+            [],
+            null);
     }
 }
