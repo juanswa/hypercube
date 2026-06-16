@@ -1,4 +1,4 @@
-namespace Hypercube.Core;
+namespace Hypercube.Core.Streaming;
 
 /// <summary>
 /// Result of attempting to ingest an item into <see cref="RollupEngine{T}"/>.

@@ -44,13 +44,13 @@ internal static class CellAggregator<T>
     public static CellAggregateState SnapshotForPersistence(CellAggregateState state) =>
         CellAggregateStateSerializer.Snapshot(state);
 
-    public static IReadOnlyDictionary<string, double> ToValues(
+    public static Dictionary<string, double> ToValues(
         RollupSchema<T> schema,
         CellAggregateState state,
         IReadOnlySet<string>? metricProjection = null) =>
         ToValuesCore(schema, state, metricProjection);
 
-    private static IReadOnlyDictionary<string, double> ToValuesCore(
+    private static Dictionary<string, double> ToValuesCore(
         RollupSchema<T> schema,
         CellAggregateState state,
         IReadOnlySet<string>? metricProjection)
@@ -221,11 +221,7 @@ internal static class CellAggregator<T>
         {
             var newLength = Math.Max(state.ActiveSketches?.Length ?? 0, index + 1);
             var expanded = new object?[newLength];
-            if (state.ActiveSketches is not null)
-            {
-                state.ActiveSketches.CopyTo(expanded, 0);
-            }
-
+            state.ActiveSketches?.CopyTo(expanded, 0);
             state.ActiveSketches = expanded;
         }
     }

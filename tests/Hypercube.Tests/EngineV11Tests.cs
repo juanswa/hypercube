@@ -1,9 +1,3 @@
-using Hypercube.AI;
-using Hypercube.Core;
-using Hypercube.Models;
-using Hypercube.State.Parquet;
-using Xunit;
-
 namespace Hypercube.Tests;
 
 public sealed record WindowedEvent(string Region, DateTimeOffset Timestamp, double Amount);

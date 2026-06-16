@@ -26,7 +26,7 @@ public sealed class RollupEngineOptions
 
     /// <summary>
     /// Maximum concurrent in-flight <see cref="RollupEngine{T}.TryAdd"/> operations.
-    /// When exceeded, callers receive <see cref="RollupAddResult.Backpressure"/>. <c>0</c> disables the limit.
+    /// When exceeded, callers receive <see cref="Streaming.RollupAddResult.Backpressure"/>. <c>0</c> disables the limit.
     /// </summary>
     public int MaxInFlightAdds { get; init; }
 

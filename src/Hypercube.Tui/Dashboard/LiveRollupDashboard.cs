@@ -26,9 +26,9 @@ public sealed class LiveRollupDashboard
     private HistorySeriesIndex? _cachedHistoryIndex;
     private SummarySnapshot? _previousSnapshot;
     private (SummarySnapshot Current, SummarySnapshot? Previous)? _latestPendingInsights;
-    private readonly object _insightsPendingSync = new();
+    private readonly System.Threading.Lock _insightsPendingSync = new();
     private InsightsPanelCache _insightsCache = InsightsPanelCache.Waiting;
-    private readonly object _insightsSync = new();
+    private readonly System.Threading.Lock _insightsSync = new();
     private int _insightsInFlight;
     private long _eventsIngested;
     private long _refreshFrame;

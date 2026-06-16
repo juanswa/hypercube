@@ -1,7 +1,5 @@
 using System.Globalization;
 using System.Text;
-using Hypercube.Core;
-using Hypercube.Models;
 
 namespace Hypercube.Visualization;
 
@@ -51,28 +49,10 @@ public static class TerminalVisualizer
     }
 
     /// <summary>
-    /// Renders a single-line sparkline from a numeric series.
+    /// Renders a single-line sparkline from a materialized array.
     /// </summary>
-    public static string RenderSparkline(IEnumerable<double> data)
-    {
-        if (data is double[] array)
-        {
-            return RenderSparkline(array);
-        }
-
-        if (data is IReadOnlyList<double> list)
-        {
-            var values = new double[list.Count];
-            for (var i = 0; i < list.Count; i++)
-            {
-                values[i] = list[i];
-            }
-
-            return RenderSparkline(values);
-        }
-
-        return RenderSparkline(data.ToArray());
-    }
+    public static string RenderSparkline(double[] values) =>
+        RenderSparkline(values.AsSpan());
 
     /// <summary>
     /// Renders a labeled horizontal bar chart for percentile or bucket values.

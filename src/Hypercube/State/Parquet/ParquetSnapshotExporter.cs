@@ -1,4 +1,3 @@
-using Hypercube.Models;
 using Parquet;
 using Parquet.Data;
 using Parquet.Schema;
@@ -45,7 +44,7 @@ public static class ParquetSnapshotExporter
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(filePath))!);
         await using var stream = File.Create(filePath);
-        using var writer = await ParquetWriter.CreateAsync(schema, stream, cancellationToken: cancellationToken);
+        await using var writer = await ParquetWriter.CreateAsync(schema, stream, cancellationToken: cancellationToken);
         using var groupWriter = writer.CreateRowGroup();
 
         await groupWriter.WriteColumnAsync(new DataColumn((DataField)schema.DataFields[0], dimensions.ToArray()), cancellationToken);

@@ -1,7 +1,3 @@
-using Hypercube.AI;
-using Hypercube.Models;
-using Xunit;
-
 namespace Hypercube.Tests;
 
 public sealed class InsightEngineTests

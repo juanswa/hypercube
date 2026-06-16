@@ -1,18 +1,20 @@
-using Hypercube.Core;
 using Parquet.Schema;
 
 namespace Hypercube.State.Parquet;
+
+internal static class ParquetCellColumns
+{
+    public const string KeyColumn = "key";
+    public const string LastAccessColumn = "last_access_ticks";
+    public const string ScalarColumnPrefix = "v_";
+    public const string SketchColumnPrefix = "sk_";
+}
 
 /// <summary>
 /// Maps a <see cref="RollupSchema{T}"/> to columnar Parquet fields for cell spill storage.
 /// </summary>
 internal sealed class ParquetCellColumnLayout<T>
 {
-    public const string KeyColumn = "key";
-    public const string LastAccessColumn = "last_access_ticks";
-    public const string ScalarColumnPrefix = "v_";
-    public const string SketchColumnPrefix = "sk_";
-
     public ParquetCellColumnLayout(RollupSchema<T> schema)
     {
         Schema = schema;
@@ -24,21 +26,21 @@ internal sealed class ParquetCellColumnLayout<T>
 
         var fields = new List<Field>
         {
-            new DataField<string>(KeyColumn),
-            new DataField<long>(LastAccessColumn)
+            new DataField<string>(ParquetCellColumns.KeyColumn),
+            new DataField<long>(ParquetCellColumns.LastAccessColumn)
         };
 
         ScalarFields = new DataField<double>[ScalarSlotCount];
         for (var slot = 0; slot < ScalarSlotCount; slot++)
         {
-            ScalarFields[slot] = new DataField<double>($"{ScalarColumnPrefix}{slot}");
+            ScalarFields[slot] = new DataField<double>($"{ParquetCellColumns.ScalarColumnPrefix}{slot}");
             fields.Add(ScalarFields[slot]);
         }
 
         var sketchFields = new Dictionary<int, DataField<byte[]>>();
         foreach (var metricIndex in SketchMetricIndices)
         {
-            var field = new DataField<byte[]>($"{SketchColumnPrefix}{metricIndex}");
+            var field = new DataField<byte[]>($"{ParquetCellColumns.SketchColumnPrefix}{metricIndex}");
             sketchFields[metricIndex] = field;
             fields.Add(field);
         }
@@ -115,12 +117,12 @@ internal sealed class ParquetCellColumnLayout<T>
         var metricIndices = ResolveMetricIndices(metricProjection);
         var fields = new List<DataField>(2 + ScalarSlotCount + SketchFields.Count)
         {
-            (DataField)ParquetSchema.DataFields.First(static field => field.Name == KeyColumn)
+            (DataField)ParquetSchema.DataFields.First(static field => field.Name == ParquetCellColumns.KeyColumn)
         };
 
         if (includeLastAccess)
         {
-            fields.Add((DataField)ParquetSchema.DataFields.First(static field => field.Name == LastAccessColumn));
+            fields.Add((DataField)ParquetSchema.DataFields.First(static field => field.Name == ParquetCellColumns.LastAccessColumn));
         }
 
         for (var slot = 0; slot < ScalarSlotCount; slot++)
@@ -142,7 +144,7 @@ internal sealed class ParquetCellColumnLayout<T>
         return fields;
     }
 
-    public bool IsLegacyPayloadSchema(ParquetSchema schema) =>
+    public static bool IsLegacyPayloadSchema(ParquetSchema schema) =>
         schema.DataFields.Any(static field => field.Name == "payload");
 
     private bool SlotBelongsToMetric(int metricIndex, int slot)

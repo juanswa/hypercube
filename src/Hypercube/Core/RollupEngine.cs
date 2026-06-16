@@ -1,8 +1,3 @@
-using System.Threading;
-using Hypercube.Core.Diagnostics;
-using Hypercube.Models;
-using Hypercube.State.Parquet;
-
 namespace Hypercube.Core;
 
 /// <summary>
@@ -15,7 +10,7 @@ namespace Hypercube.Core;
 /// </para>
 /// <para>
 /// <b>Snapshots and insights:</b> <see cref="DeriveSnapshot"/> materializes an immutable
-/// <see cref="Models.SummarySnapshot"/> for deterministic analysis (driver decomposition,
+/// <see cref="SummarySnapshot"/> for deterministic analysis (driver decomposition,
 /// co-movement, distribution shape) and optional local-AI narrative layers. Snapshots support
 /// metric projection for columnar spill reads.
 /// </para>
@@ -26,7 +21,7 @@ public sealed class RollupEngine<T> : IDisposable
     private readonly EngineConfiguration _configuration;
     private readonly IClock _clock;
     private readonly Dictionary<string, DimensionStore<CellAggregateState>> _stores = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Lock _storeGate = new();
+    private readonly System.Threading.Lock _storeGate = new();
     private readonly SemaphoreSlim? _inflightGate;
     private readonly WatermarkTracker? _watermark;
     private readonly RollupDiagnostics? _diagnostics;
@@ -88,7 +83,7 @@ public sealed class RollupEngine<T> : IDisposable
     /// </summary>
     public RollupAddResult TryAdd(T item, DateTimeOffset? eventTime = null)
     {
-        if (_inflightGate is not null && !_inflightGate.Wait(0))
+        if (_inflightGate?.Wait(0) is false)
         {
             _diagnostics?.RecordBackpressure();
             return RollupAddResult.Backpressure;

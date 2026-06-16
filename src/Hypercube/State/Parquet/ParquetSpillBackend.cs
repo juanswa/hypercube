@@ -1,6 +1,4 @@
 using System.Collections.Concurrent;
-using System.Threading;
-using Hypercube.Core;
 using Parquet;
 using Parquet.Data;
 using Parquet.Schema;
@@ -194,21 +192,12 @@ public sealed class ParquetSpillBackend<TValue> : IStateBackend<TValue>, IFlusha
         }
     }
 
-    private sealed class Entry
+    private sealed class Entry(TValue value, long lastAccessTicks, IClock clock)
     {
-        private readonly IClock _clock;
+        public TValue Value { get; set; } = value;
 
-        public Entry(TValue value, long lastAccessTicks, IClock clock)
-        {
-            _clock = clock;
-            Value = value;
-            LastAccessTicks = lastAccessTicks == 0 ? clock.UtcNow.UtcTicks : lastAccessTicks;
-        }
+        public long LastAccessTicks { get; private set; } = lastAccessTicks == 0 ? clock.UtcNow.UtcTicks : lastAccessTicks;
 
-        public TValue Value { get; set; }
-
-        public long LastAccessTicks { get; private set; }
-
-        public void Touch() => LastAccessTicks = _clock.UtcNow.UtcTicks;
+        public void Touch() => LastAccessTicks = clock.UtcNow.UtcTicks;
     }
 }

@@ -1,5 +1,3 @@
-using Hypercube.Models;
-
 namespace Hypercube.AI;
 
 /// <summary>
@@ -102,11 +100,7 @@ public static class DeterministicInsightEngine
         IReadOnlyList<string>? metrics = null,
         int topN = 5)
     {
-        var metricNames = metrics ?? previous.Rows
-            .SelectMany(row => row.Metrics.Keys)
-            .Concat(current.Rows.SelectMany(row => row.Metrics.Keys))
-            .Distinct(CellId.Comparer)
-            .ToList();
+        var metricNames = metrics ?? CollectMetricNames(previous, current);
 
         var analyses = new List<MetricDriverAnalysis>(metricNames.Count);
         foreach (var metric in metricNames)
@@ -151,9 +145,9 @@ public static class DeterministicInsightEngine
                     ? previousSiblings.Select(CellId.From)
                     : [])
                 .Distinct(CellId.Comparer)
-                .ToList();
+                .ToArray();
 
-            if (childIds.Count < 2)
+            if (childIds.Length < 2)
             {
                 continue;
             }
@@ -192,8 +186,12 @@ public static class DeterministicInsightEngine
                 continue;
             }
 
-            var childSigns = childRateDeltas.Select(x => Math.Sign(x.RateDelta)).Where(s => s != 0).Distinct().ToList();
-            if (childSigns.Count != 1)
+            var childSigns = childRateDeltas
+                .Select(static x => Math.Sign(x.RateDelta))
+                .Where(static s => s != 0)
+                .Distinct()
+                .ToArray();
+            if (childSigns.Length != 1)
             {
                 continue;
             }
@@ -295,13 +293,11 @@ public static class DeterministicInsightEngine
         double numerator = 0;
         foreach (var childId in childIds)
         {
-            if (!rowsByCell.TryGetValue(childId, out var row))
+            if (rowsByCell.TryGetValue(childId, out var row))
             {
-                continue;
+                count += row[countMetric];
+                numerator += row[rateNumeratorMetric];
             }
-
-            count += row[countMetric];
-            numerator += row[rateNumeratorMetric];
         }
 
         return (count, numerator);
@@ -318,9 +314,34 @@ public static class DeterministicInsightEngine
         return denominator == 0 ? 0 : row[rateNumeratorMetric] / denominator;
     }
 
+    private static List<string> CollectMetricNames(SummarySnapshot previous, SummarySnapshot current)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in previous.Rows)
+        {
+            names.UnionWith(row.Metrics.Keys);
+        }
+
+        foreach (var row in current.Rows)
+        {
+            names.UnionWith(row.Metrics.Keys);
+        }
+
+        return [.. names];
+    }
+
     private static double StdDev(IEnumerable<double> source)
     {
-        var values = source as double[] ?? source.ToArray();
+        if (source is double[] values)
+        {
+            return StdDev(values);
+        }
+
+        return StdDev(source.ToArray());
+    }
+
+    private static double StdDev(double[] values)
+    {
         if (values.Length == 0)
         {
             return 0;

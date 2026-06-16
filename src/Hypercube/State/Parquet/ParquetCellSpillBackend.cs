@@ -1,6 +1,4 @@
 using System.Collections.Concurrent;
-using System.Threading;
-using Hypercube.Core;
 using Parquet;
 using Parquet.Data;
 
@@ -55,7 +53,7 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
     /// <inheritdoc />
     public CellAggregateState GetOrAdd(string key, Func<CellAggregateState> factory)
     {
-        List<(string Key, HotEntry Entry)>? evicted = null;
+        List<(string Key, HotEntry Entry)>? evicted;
         CellAggregateState result;
         lock (_stateLock)
         {
@@ -181,7 +179,7 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
     /// <inheritdoc />
     public void Upsert(string key, CellAggregateState value)
     {
-        List<(string Key, HotEntry Entry)>? evicted;
+        List<(string Key, HotEntry Entry)>? evicted = null;
         lock (_stateLock)
         {
             evicted = CacheHotUnderLock(key, value);
@@ -304,7 +302,7 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
 
         using var stream = ParquetFileIO.OpenReadShared(_filePath);
         using var reader = ParquetReader.CreateAsync(stream).GetAwaiter().GetResult();
-        if (_layout.IsLegacyPayloadSchema(reader.Schema))
+        if (ParquetCellColumnLayout<T>.IsLegacyPayloadSchema(reader.Schema))
         {
             LoadLegacyPayload(reader);
             return;
@@ -352,7 +350,7 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
 
         using var stream = ParquetFileIO.OpenReadShared(_filePath);
         using var reader = ParquetReader.CreateAsync(stream).GetAwaiter().GetResult();
-        if (_layout.IsLegacyPayloadSchema(reader.Schema))
+        if (ParquetCellColumnLayout<T>.IsLegacyPayloadSchema(reader.Schema))
         {
             foreach (var row in ReadLegacyProjectedRows(reader, metricProjection, excludeKeys))
             {
@@ -372,7 +370,7 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
                 columns[field.Name] = rowGroup.ReadColumnAsync(field).GetAwaiter().GetResult().Data;
             }
 
-            var keys = (string[])columns[ParquetCellColumnLayout<T>.KeyColumn];
+            var keys = (string[])columns[ParquetCellColumns.KeyColumn];
             for (var rowIndex = 0; rowIndex < keys.Length; rowIndex++)
             {
                 var key = keys[rowIndex];
@@ -473,7 +471,7 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
 
         using var stream = ParquetFileIO.OpenReadShared(_filePath);
         using var reader = ParquetReader.CreateAsync(stream).GetAwaiter().GetResult();
-        if (_layout.IsLegacyPayloadSchema(reader.Schema))
+        if (ParquetCellColumnLayout<T>.IsLegacyPayloadSchema(reader.Schema))
         {
             for (var group = 0; group < reader.RowGroupCount; group++)
             {
@@ -506,8 +504,8 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
                 columns[field.Name] = rowGroup.ReadColumnAsync(field).GetAwaiter().GetResult().Data;
             }
 
-            var keys = (string[])columns[ParquetCellColumnLayout<T>.KeyColumn];
-            var lastAccess = (long[])columns[ParquetCellColumnLayout<T>.LastAccessColumn];
+            var keys = (string[])columns[ParquetCellColumns.KeyColumn];
+            var lastAccess = (long[])columns[ParquetCellColumns.LastAccessColumn];
             for (var rowIndex = 0; rowIndex < keys.Length; rowIndex++)
             {
                 if (excludeKey is not null && string.Equals(keys[rowIndex], excludeKey, StringComparison.Ordinal))
@@ -525,14 +523,14 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
     }
 
     private CellAggregateState BuildPartialState(
-        IReadOnlyDictionary<string, Array> columns,
+        Dictionary<string, Array> columns,
         int rowIndex,
         HashSet<int> metricIndices)
     {
         var metricValues = new double[_layout.ScalarSlotCount];
         for (var slot = 0; slot < _layout.ScalarSlotCount; slot++)
         {
-            var columnName = $"{ParquetCellColumnLayout<T>.ScalarColumnPrefix}{slot}";
+            var columnName = $"{ParquetCellColumns.ScalarColumnPrefix}{slot}";
             if (!columns.TryGetValue(columnName, out var column))
             {
                 continue;
@@ -550,7 +548,7 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
                 continue;
             }
 
-            var columnName = $"{ParquetCellColumnLayout<T>.SketchColumnPrefix}{metricIndex}";
+            var columnName = $"{ParquetCellColumns.SketchColumnPrefix}{metricIndex}";
             if (!columns.TryGetValue(columnName, out var column))
             {
                 sketchStates[metricIndex] = [];
@@ -574,9 +572,8 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
         string[] removals;
         lock (_stateLock)
         {
-            hotRows = _hot
-                .Select(static pair => new PersistedRow(pair.Key, pair.Value.LastAccessTicks, pair.Value.State))
-                .ToList();
+            hotRows = [.. _hot
+                .Select(static pair => new PersistedRow(pair.Key, pair.Value.LastAccessTicks, pair.Value.State))];
             removals = [.. _pendingRemovals];
             _pendingRemovals.Clear();
         }
@@ -592,7 +589,7 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
         var rows = ReadAllRowsFromDisk();
         if (removals is { Count: > 0 })
         {
-            rows = rows.Where(row => !removals.Contains(row.Key, StringComparer.Ordinal)).ToList();
+            rows = [.. rows.Where(row => !removals.Contains(row.Key, StringComparer.Ordinal))];
         }
 
         var rowByKey = rows.ToDictionary(static row => row.Key, static row => row, StringComparer.Ordinal);
@@ -658,8 +655,8 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
         using var writer = ParquetWriter.CreateAsync(_layout.ParquetSchema, stream).GetAwaiter().GetResult();
         using var groupWriter = writer.CreateRowGroup();
 
-        var keyField = _layout.ParquetSchema.DataFields.First(static field => field.Name == ParquetCellColumnLayout<T>.KeyColumn);
-        var lastAccessField = _layout.ParquetSchema.DataFields.First(static field => field.Name == ParquetCellColumnLayout<T>.LastAccessColumn);
+        var keyField = _layout.ParquetSchema.DataFields.First(static field => field.Name == ParquetCellColumns.KeyColumn);
+        var lastAccessField = _layout.ParquetSchema.DataFields.First(static field => field.Name == ParquetCellColumns.LastAccessColumn);
         groupWriter.WriteColumnAsync(new DataColumn(keyField, keys)).GetAwaiter().GetResult();
         groupWriter.WriteColumnAsync(new DataColumn(lastAccessField, lastAccess)).GetAwaiter().GetResult();
 
@@ -674,31 +671,19 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
         }
     }
 
-    private sealed class HotEntry
+    private sealed class HotEntry(CellAggregateState state, long lastAccessTicks, IClock clock)
     {
-        private readonly IClock _clock;
+        public CellAggregateState State { get; set; } = state;
 
-        public HotEntry(CellAggregateState state, long lastAccessTicks, IClock clock)
-        {
-            _clock = clock;
-            State = state;
-            LastAccessTicks = lastAccessTicks;
-        }
+        public long LastAccessTicks { get; private set; } = lastAccessTicks;
 
-        public CellAggregateState State { get; set; }
-
-        public long LastAccessTicks { get; private set; }
-
-        public void Touch() => LastAccessTicks = _clock.UtcNow.UtcTicks;
+        public void Touch() => LastAccessTicks = clock.UtcNow.UtcTicks;
     }
 
     private readonly record struct PersistedRow(string Key, long LastAccessTicks, CellAggregateState State);
 }
 
 /// <summary>Result row from projected spill enumeration.</summary>
-/// <param name="Key">Dimension key.</param>
-/// <param name="Metrics">Projected metric values.</param>
-/// <param name="State">Hydrated state when available; otherwise a partial state built from projected columns.</param>
 public readonly record struct ProjectedCellRow(
     string Key,
     IReadOnlyDictionary<string, double> Metrics,

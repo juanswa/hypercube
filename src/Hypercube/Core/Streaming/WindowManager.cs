@@ -1,4 +1,4 @@
-namespace Hypercube.Core;
+namespace Hypercube.Core.Streaming;
 
 /// <summary>
 /// Computes window-qualified dimension keys from event timestamps.

@@ -11,7 +11,7 @@ public sealed class HyperLogLogState
 {
     private const int Precision = 14;
     private const int RegisterCount = 1 << Precision;
-    private const double Alpha = 0.7213 / (1 + 1.079 / RegisterCount);
+    private const double Alpha = (0.7213 / (1.0 + (1.079 / RegisterCount)));
 
     private readonly byte[] _registers = new byte[RegisterCount];
 

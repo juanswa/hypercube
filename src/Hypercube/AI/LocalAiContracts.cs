@@ -1,5 +1,3 @@
-using Hypercube.Models;
-
 namespace Hypercube.AI;
 
 /// <summary>
@@ -143,18 +141,4 @@ public sealed class RuleBasedLocalAiEngine : ILocalAiEngine
 
         return string.Join(" ", narrativeParts);
     }
-
-    /// <summary>
-    /// Renders an ASCII terminal report with sparklines and optional digest histograms.
-    /// </summary>
-    /// <param name="snapshot">Snapshot that was analyzed.</param>
-    /// <param name="analysis">Analysis output from <see cref="AnalyzeSummary"/>.</param>
-    /// <param name="history">Optional prior snapshots for trend sparklines.</param>
-    /// <param name="digestMetric">Optional digest metric for distribution histograms.</param>
-    public string RenderTerminalReport(
-        SummarySnapshot snapshot,
-        AiAnalysisResult analysis,
-        IReadOnlyList<SummarySnapshot>? history = null,
-        string? digestMetric = null) =>
-        Visualization.SnapshotTerminalReport.Render(snapshot, analysis, history, digestMetric);
 }

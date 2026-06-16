@@ -1,13 +1,11 @@
 namespace Hypercube.State.Parquet;
 
 /// <summary>Coalesces repeated flush requests into a single background operation.</summary>
-internal sealed class ParquetFlushCoordinator
+internal sealed class ParquetFlushCoordinator(Action flushCore)
 {
-    private readonly Lock _gate = new();
-    private readonly Action _flushCore;
-    private bool _flushQueued;
+    private readonly System.Threading.Lock _gate = new();
 
-    public ParquetFlushCoordinator(Action flushCore) => _flushCore = flushCore;
+    private bool _flushQueued;
 
     /// <summary>Schedules a background flush when one is not already queued.</summary>
     public void RequestFlush()
@@ -26,7 +24,7 @@ internal sealed class ParquetFlushCoordinator
         {
             try
             {
-                _flushCore();
+                flushCore();
             }
             finally
             {
@@ -39,5 +37,5 @@ internal sealed class ParquetFlushCoordinator
     }
 
     /// <summary>Performs a synchronous flush, bypassing the background queue.</summary>
-    public void FlushNow() => _flushCore();
+    public void FlushNow() => flushCore();
 }

@@ -36,8 +36,6 @@ public enum AggregationKind
 /// Describes one dimension used to slice rollup data.
 /// </summary>
 /// <typeparam name="T">The event type being aggregated.</typeparam>
-/// <param name="name">Dimension name exposed in <see cref="Models.SummaryRow.Dimension"/>.</param>
-/// <param name="selector">Function that maps an item to its dimension key.</param>
 public sealed class DimensionDefinition<T>(string name, Func<T, string> selector)
 {
     /// <summary>Dimension name (for example <c>channel</c>, <c>status</c>).</summary>

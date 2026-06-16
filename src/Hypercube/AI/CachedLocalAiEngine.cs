@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using Hypercube.Core.Diagnostics;
-using Hypercube.Models;
 
 namespace Hypercube.AI;
 
@@ -13,6 +11,9 @@ public sealed class CachedLocalAiEngine : ILocalAiEngine
     private readonly SimilarityInferenceCache _cache;
     private readonly RollupDiagnostics? _diagnostics;
 
+    /// <summary>
+    /// Creates a caching decorator around a local AI engine.
+    /// </summary>
     public CachedLocalAiEngine(
         ILocalAiEngine inner,
         SimilarityInferenceCache? cache = null,

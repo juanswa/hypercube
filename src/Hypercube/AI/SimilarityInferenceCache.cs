@@ -1,25 +1,16 @@
 using System.Collections.Concurrent;
-using Hypercube.Models;
 
 namespace Hypercube.AI;
 
 /// <summary>
 /// Caches AI analysis results when snapshot profiles are highly similar.
 /// </summary>
-public sealed class SimilarityInferenceCache
+public sealed class SimilarityInferenceCache(double similarityThreshold = 0.99)
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _entries = new(StringComparer.Ordinal);
-    private readonly double _similarityThreshold;
-
-    public SimilarityInferenceCache(double similarityThreshold = 0.99)
-    {
-        if (similarityThreshold is <= 0 or > 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(similarityThreshold));
-        }
-
-        _similarityThreshold = similarityThreshold;
-    }
+    private readonly double _similarityThreshold = similarityThreshold is > 0 and <= 1
+        ? similarityThreshold
+        : throw new ArgumentOutOfRangeException(nameof(similarityThreshold));
 
     /// <summary>
     /// Attempts to return a cached analysis for a similar snapshot profile.

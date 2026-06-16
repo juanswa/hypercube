@@ -1,9 +1,3 @@
-using Hypercube.AI;
-using Hypercube.Core;
-using Hypercube.Models;
-using Hypercube.Visualization;
-using Xunit;
-
 namespace Hypercube.Tests;
 
 public sealed class TerminalVisualizerTests
@@ -11,7 +5,7 @@ public sealed class TerminalVisualizerTests
     [Fact]
     public void RenderSparkline_ProducesBlockCharacters()
     {
-        var sparkline = TerminalVisualizer.RenderSparkline([1, 3, 5, 2, 8]);
+        var sparkline = TerminalVisualizer.RenderSparkline([1d, 3d, 5d, 2d, 8d]);
 
         Assert.Equal(5, sparkline.Length);
         Assert.All(sparkline, ch => Assert.Contains(ch, " ▂▃▄▅▆▇█"));
@@ -21,7 +15,7 @@ public sealed class TerminalVisualizerTests
     [Fact]
     public void RenderSparkline_ReturnsEmptyForNoData()
     {
-        Assert.Equal(string.Empty, TerminalVisualizer.RenderSparkline([]));
+        Assert.Equal(string.Empty, TerminalVisualizer.RenderSparkline(ReadOnlySpan<double>.Empty));
     }
 
     [Fact]
@@ -119,13 +113,13 @@ public sealed class TerminalVisualizerTests
     }
 
     [Fact]
-    public void RuleBasedEngine_RenderTerminalReport_DelegatesToSnapshotReport()
+    public void SnapshotTerminalReport_Render_IncludesInsights()
     {
         var snapshot = Snapshot(0, ("region", "east", 10));
         var engine = new RuleBasedLocalAiEngine();
         var analysis = engine.AnalyzeSummary(snapshot);
 
-        var report = engine.RenderTerminalReport(snapshot, analysis);
+        var report = SnapshotTerminalReport.Render(snapshot, analysis);
 
         Assert.Contains("region", report);
         Assert.Contains("Insight Highlights", report);

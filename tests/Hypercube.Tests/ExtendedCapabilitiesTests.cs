@@ -1,8 +1,3 @@
-using Hypercube.AI;
-using Hypercube.Core;
-using Hypercube.Models;
-using Xunit;
-
 namespace Hypercube.Tests;
 
 public sealed record UserEvent(string Region, string UserId, double Amount);

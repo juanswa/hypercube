@@ -1,6 +1,5 @@
 using System.Text;
 using Hypercube.AI;
-using Hypercube.Models;
 
 namespace Hypercube.Visualization;
 
@@ -33,7 +32,7 @@ public static class SnapshotTerminalReport
             ? TerminalVisualizer.BuildHistorySeriesIndex(history)
             : null;
 
-        foreach (var row in snapshot.Rows.OrderByDescending(r => snapshot.PrimaryValue(r)))
+        foreach (var row in snapshot.Rows.OrderByDescending(snapshot.PrimaryValue))
         {
             report.AppendLine(
                 $"Cell: {row.Dimension} / {row.Key} (count: {row.Count:0.##}, primary: {snapshot.PrimaryValue(row):0.##})");

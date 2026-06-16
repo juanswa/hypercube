@@ -1,6 +1,3 @@
-using Hypercube.Core;
-using Hypercube.Models;
-
 namespace Hypercube.AI;
 
 /// <summary>

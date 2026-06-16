@@ -1,5 +1,4 @@
 using System.Text;
-using Hypercube.Models;
 
 namespace Hypercube.AI;
 
@@ -8,13 +7,16 @@ namespace Hypercube.AI;
 /// </summary>
 public sealed class PromptTemplateCompiler
 {
+    private const string DefaultSystemPrompt =
+        "You are Hypercube, a concise analytics assistant. Summarize anomalies and drivers using only supplied metrics.";
+
     private readonly string _systemPrompt;
 
-    public PromptTemplateCompiler(string? systemPrompt = null)
-    {
-        _systemPrompt = systemPrompt ??
-            "You are Hypercube, a concise analytics assistant. Summarize anomalies and drivers using only supplied metrics.";
-    }
+    /// <summary>
+    /// Creates a compiler with an optional system prompt override.
+    /// </summary>
+    public PromptTemplateCompiler(string? systemPrompt = null) =>
+        _systemPrompt = systemPrompt ?? DefaultSystemPrompt;
 
     /// <summary>
     /// Builds a hyper-compressed prompt payload from a snapshot and optional analysis.
@@ -34,7 +36,7 @@ public sealed class PromptTemplateCompiler
             builder.Append(" primary=");
             builder.Append(snapshot.PrimaryValue(row).ToString("0.##"));
             builder.Append(" metrics=");
-            builder.Append(string.Join(',', row.Metrics.Select(static kv => $"{kv.Key}={kv.Value:0.##}")));
+            builder.AppendJoin(',', row.Metrics.Select(static kv => $"{kv.Key}={kv.Value:0.##}"));
             builder.AppendLine();
         }
 
@@ -43,7 +45,8 @@ public sealed class PromptTemplateCompiler
             builder.AppendLine("[insights]");
             foreach (var insight in analysis.RecommendedInsights.Take(5))
             {
-                builder.Append("- ");
+                builder.Append('-');
+                builder.Append(' ');
                 builder.AppendLine(insight);
             }
         }

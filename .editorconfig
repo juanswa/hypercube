@@ -6,8 +6,68 @@ end_of_line = lf
 insert_final_newline = true
 trim_trailing_whitespace = true
 
-[*.{cs,csproj,sln,json,md,py}]
+[*.{cs,csproj,sln,json,md}]
 indent_style = space
 
 [*.cs]
 indent_size = 4
+
+# Readonly fields populated in constructor bodies (RollupEngine, etc.)
+dotnet_diagnostic.RCS1085.severity = none
+
+# XML doc param names on primary-constructor parameters / record positions
+dotnet_diagnostic.RCS1263.severity = none
+
+# ReadOnlySpan<double>.Empty is clearer than collection expressions here
+dotnet_diagnostic.IDE0301.severity = none
+
+# Histogram output must stay invariant-culture for stable tests
+dotnet_diagnostic.IDE0071.severity = none
+
+# string('-', n) is not available on all language versions in this repo
+dotnet_diagnostic.IDE0090.severity = none
+
+# Nullable locals require explicit null before some control-flow paths
+dotnet_diagnostic.IDE0059.severity = none
+
+# Primary constructors are not always clearer for multi-field service types
+dotnet_diagnostic.IDE0290.severity = none
+
+# Collection-expression suggestions are stylistic for builder-heavy code
+dotnet_diagnostic.IDE0305.severity = none
+
+# Lock type is already used; IDE0330 duplicates RCS1226
+dotnet_diagnostic.IDE0330.severity = none
+
+# Folder-based namespace rules conflict with intentional public API layout
+dotnet_diagnostic.IDE0130.severity = none
+
+# Conditional-access suggestions on guarded paths
+dotnet_diagnostic.IDE0031.severity = none
+dotnet_diagnostic.RCS1146.severity = none
+
+# Method-group / lambda style preferences
+dotnet_diagnostic.IDE0200.severity = none
+
+# Type-simplification hints in XML docs
+dotnet_diagnostic.IDE0001.severity = none
+
+# Roslynator micro-optimizations
+dotnet_diagnostic.RCS1077.severity = none
+dotnet_diagnostic.RCS1123.severity = none
+dotnet_diagnostic.RCS1158.severity = none
+dotnet_diagnostic.RCS1197.severity = none
+dotnet_diagnostic.RCS1261.severity = none
+
+# Performance analyzer prefers concrete types on public/internal APIs
+dotnet_diagnostic.CA1859.severity = none
+
+# Static suggestions on nested helpers and interface defaults
+dotnet_diagnostic.CA1822.severity = none
+
+# Guard helpers already use ThrowIf* where appropriate
+dotnet_diagnostic.CA1512.severity = none
+
+# Unnecessary usings are handled by build cleanup, not IDE noise
+dotnet_diagnostic.IDE0005.severity = none
+dotnet_diagnostic.CS8019.severity = none

@@ -1,4 +1,4 @@
-namespace Hypercube.Core;
+namespace Hypercube.Core.Streaming;
 
 /// <summary>
 /// Tracks event-time watermarks for out-of-order stream ingestion.
@@ -13,11 +13,7 @@ public sealed class WatermarkTracker
     /// <param name="allowedLateness">How far behind the current watermark events may arrive.</param>
     public WatermarkTracker(TimeSpan allowedLateness)
     {
-        if (allowedLateness < TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(allowedLateness));
-        }
-
+        ArgumentOutOfRangeException.ThrowIfLessThan(allowedLateness, TimeSpan.Zero, nameof(allowedLateness));
         AllowedLateness = allowedLateness;
     }
 
