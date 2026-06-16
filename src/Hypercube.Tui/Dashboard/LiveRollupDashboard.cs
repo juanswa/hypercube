@@ -1,3 +1,4 @@
+using Hypercube;
 using Hypercube.AI;
 using Hypercube.Core;
 using Hypercube.Core.Diagnostics;
@@ -25,17 +26,42 @@ public sealed class LiveRollupDashboard
     private readonly List<SummarySnapshot> _history = [];
     private HistorySeriesIndex? _cachedHistoryIndex;
     private SummarySnapshot? _previousSnapshot;
-    private (SummarySnapshot Current, SummarySnapshot? Previous)? _latestPendingInsights;
-    private readonly System.Threading.Lock _insightsPendingSync = new();
-    private InsightsPanelCache _insightsCache = InsightsPanelCache.Waiting;
+    private readonly InsightsRefreshWorker _insightsWorker;
     private readonly System.Threading.Lock _insightsSync = new();
-    private int _insightsInFlight;
+    private InsightsPanelCache _insightsCache = InsightsPanelCache.Waiting;
     private long _eventsIngested;
     private long _refreshFrame;
     private RollupDiagnosticsSnapshot? _previousDiagnostics;
     private DateTimeOffset _previousDiagnosticsAt;
 
+    /// <summary>
+    /// Runs the demo dashboard with a built-in synthetic event schema.
+    /// </summary>
     public LiveRollupDashboard(EngineConfiguration? configuration = null)
+        : this(CreateDemoEngine(configuration))
+    {
+    }
+
+    /// <summary>
+    /// Runs the dashboard over a caller-supplied rollup engine (for example from <see cref="Hypercube.CreateEngine"/>).
+    /// </summary>
+    public LiveRollupDashboard(RollupEngine<DemoEvent> engine)
+    {
+        _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+        _ai = new CachedLocalAiEngine(new RuleBasedLocalAiEngine(), diagnostics: _engine.Diagnostics);
+        _insightsWorker = new InsightsRefreshWorker(
+            _ai,
+            (snapshot, analysis) =>
+            {
+                lock (_insightsSync)
+                {
+                    _insightsCache = BuildInsightsPanelCache(snapshot, analysis);
+                }
+            },
+            _engine.Diagnostics);
+    }
+
+    private static RollupEngine<DemoEvent> CreateDemoEngine(EngineConfiguration? configuration)
     {
         var schema = RollupSchema
             .For<DemoEvent>()
@@ -49,7 +75,7 @@ public sealed class LiveRollupDashboard
             .PrimaryMetric("count")
             .Build();
 
-        _engine = new RollupEngine<DemoEvent>(schema, configuration ?? new EngineConfiguration
+        return Hypercube.CreateEngine(schema, configuration ?? new EngineConfiguration
         {
             EnableDiagnostics = true,
             Windowing = new WindowConfiguration
@@ -58,8 +84,6 @@ public sealed class LiveRollupDashboard
                 WindowSize = TimeSpan.FromMinutes(15)
             }
         });
-
-        _ai = new CachedLocalAiEngine(new RuleBasedLocalAiEngine(), diagnostics: _engine.Diagnostics);
     }
 
     /// <summary>Runs the live dashboard until cancelled or <paramref name="duration"/> elapses.</summary>
@@ -138,93 +162,14 @@ public sealed class LiveRollupDashboard
 
     private void ScheduleInsightsRefresh(SummarySnapshot snapshot)
     {
-        lock (_insightsPendingSync)
-        {
-            var previous = _previousSnapshot;
-            _previousSnapshot = snapshot;
-            // Overwrite stale work — dashboards only need the latest snapshot pair.
-            _latestPendingInsights = (snapshot, previous);
-        }
-
-        EnsureInsightsWorkerRunning();
-    }
-
-    private void EnsureInsightsWorkerRunning()
-    {
-        if (Interlocked.CompareExchange(ref _insightsInFlight, 1, 0) != 0)
-        {
-            return;
-        }
-
-        Task.Run(ProcessLatestInsights);
-    }
-
-    private void ProcessLatestInsights()
-    {
-        try
-        {
-            while (TryTakePendingInsights(out var work))
-            {
-                ProcessInsightsWork(work);
-            }
-        }
-        finally
-        {
-            Interlocked.Exchange(ref _insightsInFlight, 0);
-
-            // Re-arm the worker if a refresh arrived while we were processing — we cleared
-            // _insightsInFlight above so EnsureInsightsWorkerRunning can start a new pass.
-            if (HasPendingInsights())
-            {
-                EnsureInsightsWorkerRunning();
-            }
-        }
-    }
-
-    private bool TryTakePendingInsights(out (SummarySnapshot Current, SummarySnapshot? Previous) work)
-    {
-        lock (_insightsPendingSync)
-        {
-            if (_latestPendingInsights is null)
-            {
-                work = default;
-                return false;
-            }
-
-            work = _latestPendingInsights.Value;
-            _latestPendingInsights = null;
-            return true;
-        }
-    }
-
-    private bool HasPendingInsights()
-    {
-        lock (_insightsPendingSync)
-        {
-            return _latestPendingInsights is not null;
-        }
-    }
-
-    private void ProcessInsightsWork((SummarySnapshot Current, SummarySnapshot? Previous) work)
-    {
-        try
-        {
-            var analysis = _ai.AnalyzeSummary(work.Current, work.Previous);
-            var cache = BuildInsightsPanelCache(work.Current, analysis);
-            lock (_insightsSync)
-            {
-                _insightsCache = cache;
-            }
-        }
-        catch
-        {
-            _engine.Diagnostics?.RecordInsightFailure();
-        }
+        var previous = _previousSnapshot;
+        _previousSnapshot = snapshot;
+        _insightsWorker.Schedule(snapshot, previous);
     }
 
     private Panel GetInsightsPanel()
     {
-        if (Volatile.Read(ref _insightsInFlight) == 1)
+        if (_insightsWorker.IsInFlight)
         {
             return InsightsPanelCache.Thinking.Panel;
         }
@@ -244,7 +189,7 @@ public sealed class LiveRollupDashboard
         var aiText = string.Empty;
         var insightsText = string.Empty;
 
-        if (Volatile.Read(ref _insightsInFlight) == 1)
+        if (_insightsWorker.IsInFlight)
         {
             insightsText = $"  [grey]{InsightsSpinnerFrame()} insights[/]";
         }

@@ -49,8 +49,12 @@ dotnet_diagnostic.RCS1146.severity = none
 # Method-group / lambda style preferences
 dotnet_diagnostic.IDE0200.severity = none
 
-# Type-simplification hints in XML docs
+# Type-simplification hints in XML docs and qualified names
 dotnet_diagnostic.IDE0001.severity = none
+dotnet_diagnostic.IDE0002.severity = none
+
+# C# Dev Kit nullable-bool style preference
+dotnet_diagnostic.CDT1001.severity = none
 
 # Roslynator micro-optimizations
 dotnet_diagnostic.RCS1077.severity = none

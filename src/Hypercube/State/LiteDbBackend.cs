@@ -1,6 +1,3 @@
-using System.Collections.Concurrent;
-using LiteDB;
-
 namespace Hypercube.State;
 
 /// <summary>
@@ -27,9 +24,9 @@ public sealed class LiteDbBackend<TValue> : IStateBackend<TValue>, IDisposable w
     public LiteDbBackend(string databasePath, string collectionName, int maxLiveCacheKeys = 0)
     {
         var mapper = new BsonMapper();
-        if (typeof(TValue) == typeof(Core.CellAggregateState))
+        if (typeof(TValue) == typeof(CellAggregateState))
         {
-            Core.CellAggregateStateSerializer.Register(mapper);
+            CellAggregateStateSerializer.Register(mapper);
         }
 
         _db = new LiteDatabase(databasePath, mapper);

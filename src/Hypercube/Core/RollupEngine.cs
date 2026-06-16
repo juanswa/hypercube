@@ -83,7 +83,7 @@ public sealed class RollupEngine<T> : IDisposable
     /// </summary>
     public RollupAddResult TryAdd(T item, DateTimeOffset? eventTime = null)
     {
-        if (_inflightGate?.Wait(0) is false)
+        if (_inflightGate is SemaphoreSlim gate && !gate.Wait(0))
         {
             _diagnostics?.RecordBackpressure();
             return RollupAddResult.Backpressure;

@@ -1,5 +1,4 @@
 using Hypercube.Core.Sketches;
-using LiteDB;
 
 namespace Hypercube.Core;
 

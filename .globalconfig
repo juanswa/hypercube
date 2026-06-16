@@ -1,0 +1,5 @@
+is_global = true
+
+dotnet_diagnostic.CDT1001.severity = none
+dotnet_diagnostic.IDE0005.severity = none
+dotnet_diagnostic.IDE0002.severity = none

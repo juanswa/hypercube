@@ -4,6 +4,9 @@
   "dotnet.unitTests.runSettingsPath": "${workspaceFolder}/tests/Hypercube.Tests/test.runsettings",
   "csharp.debug.console": "integratedTerminal",
   "csharp.debug.logging.module": false,
+  "csharp.debug.justMyCode": true,
   "csharp.analysis.suppressTrimWarnings": false,
-  "dotnet.analyzerDiagnosticsScope": "fullSolution"
+  "dotnet.analyzerDiagnosticsScope": "fullSolution",
+  "dotnet.preferCSharpEditorConfigStyle": true,
+  "dotnet.formatting.organizeImportsOnFormat": true
 }
