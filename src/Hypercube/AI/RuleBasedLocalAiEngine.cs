@@ -1,55 +1,6 @@
 namespace Hypercube.AI;
 
 /// <summary>
-/// Structured output from local AI analysis of rollup snapshots.
-/// </summary>
-public sealed class AiAnalysisResult
-{
-    /// <summary>Anomaly score per cell identifier. Higher means more anomalous.</summary>
-    public Dictionary<string, double> AnomalyScores { get; init; } = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Trend or ratio score per cell identifier.
-    /// In the rule-based engine this is signal-count divided by total count.
-    /// </summary>
-    public Dictionary<string, double> TrendScores { get; init; } = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>Human-readable warning flags raised during analysis.</summary>
-    public List<string> Flags { get; init; } = [];
-
-    /// <summary>Short actionable insight statements.</summary>
-    public List<string> RecommendedInsights { get; init; } = [];
-
-    /// <summary>Top ranked interesting cells from deterministic analysis.</summary>
-    public List<InterestingCellInsight> TopInterestingCells { get; init; } = [];
-
-    /// <summary>Detected Simpson-style paradox signals between snapshots.</summary>
-    public List<SimpsonParadoxSignal> SimpsonSignals { get; init; } = [];
-}
-
-/// <summary>
-/// Local, offline AI contract for analyzing rollup snapshots and generating narratives.
-/// Implementations may use ONNX/GGML models or deterministic rules.
-/// </summary>
-public interface ILocalAiEngine
-{
-    /// <summary>
-    /// Analyzes a snapshot, optionally comparing against a previous snapshot.
-    /// </summary>
-    /// <param name="snapshot">Current rollup snapshot.</param>
-    /// <param name="previousSnapshot">Optional prior snapshot for temporal analysis.</param>
-    /// <param name="topN">Maximum number of top interesting cells to retain.</param>
-    AiAnalysisResult AnalyzeSummary(SummarySnapshot snapshot, SummarySnapshot? previousSnapshot = null, int topN = 5);
-
-    /// <summary>
-    /// Produces a human-readable narrative from a snapshot and its analysis result.
-    /// </summary>
-    /// <param name="snapshot">Snapshot that was analyzed.</param>
-    /// <param name="analysis">Analysis output from <see cref="AnalyzeSummary"/>.</param>
-    string GenerateNarrative(SummarySnapshot snapshot, AiAnalysisResult analysis);
-}
-
-/// <summary>
 /// Deterministic, rule-based implementation of <see cref="ILocalAiEngine"/>.
 /// Suitable for offline use without ML models.
 /// </summary>

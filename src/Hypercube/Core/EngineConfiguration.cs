@@ -1,47 +1,5 @@
 namespace Hypercube.Core;
 
-/// <summary>Disk spill format used when cardinality exceeds memory limits.</summary>
-public enum SpillBackendKind
-{
-    /// <summary>Embedded LiteDB document store (default).</summary>
-    LiteDb,
-
-    /// <summary>Columnar Parquet files optimized for metric scans.</summary>
-    Parquet
-}
-
-/// <summary>Time-window aggregation strategy.</summary>
-public enum WindowStrategy
-{
-    /// <summary>No windowing; aggregates until <see cref="RollupEngine{T}.Clear"/>.</summary>
-    Continuous,
-
-    /// <summary>Non-overlapping fixed windows.</summary>
-    Tumbling,
-
-    /// <summary>Overlapping windows that slide forward.</summary>
-    Sliding,
-
-    /// <summary>Gap-based sessions; a new window opens after inactivity.</summary>
-    Session
-}
-
-/// <summary>Windowing parameters for event-time ingestion.</summary>
-public sealed class WindowConfiguration
-{
-    /// <summary>Window strategy applied during ingestion.</summary>
-    public WindowStrategy Strategy { get; init; } = WindowStrategy.Continuous;
-
-    /// <summary>Window size for tumbling and sliding strategies.</summary>
-    public TimeSpan WindowSize { get; init; } = TimeSpan.FromHours(1);
-
-    /// <summary>Slide interval for sliding windows. Defaults to half of <see cref="WindowSize"/>.</summary>
-    public TimeSpan? SlideInterval { get; init; }
-
-    /// <summary>Gap that closes a session window.</summary>
-    public TimeSpan SessionGap { get; init; } = TimeSpan.FromMinutes(30);
-}
-
 /// <summary>
 /// Version 1.1 lifecycle configuration for <see cref="RollupEngine{T}"/>.
 /// </summary>
