@@ -90,3 +90,19 @@ dump.txt
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Test results
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# Python test output
+.pytest_cache/
+htmlcov/
+coverage.xml
+
+# Temp test artifacts
+*.tmp
+*.tmp.json
+*.tmp.txt
