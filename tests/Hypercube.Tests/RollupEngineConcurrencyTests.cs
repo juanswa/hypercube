@@ -1,3 +1,5 @@
+using Hypercube.State;
+
 namespace Hypercube.Tests;
 
 public sealed class RollupEngineConcurrencyTests
@@ -55,6 +57,22 @@ public sealed class RollupEngineConcurrencyTests
         engine.Dispose();
 
         Assert.NotEmpty(Directory.EnumerateFiles(spillDir, "*.parquet"));
+    }
+
+    [Fact]
+    public void GetOrAdd_ConcurrentSameKey_NoDuplicateKeyException_ExactlyOneRowPersisted()
+    {
+        const int threadCount = 64;
+        // Use an in-memory LiteDB connection to avoid file-handle races in test cleanup.
+        using var backend = new LiteDbBackend<string>(":memory:", "test_collection");
+
+        Parallel.For(0, threadCount, _ =>
+        {
+            backend.GetOrAdd("shared-key", () => "shared-value");
+        });
+
+        Assert.Equal(1, backend.Count);
+        Assert.Equal("shared-value", backend.GetOrAdd("shared-key", () => "should-not-be-called"));
     }
 
     private sealed record TeamActivity(

@@ -127,11 +127,27 @@ public static class DeterministicInsightEngine
     /// <param name="current">Comparison snapshot.</param>
     /// <param name="countMetric">Denominator metric for rates. Defaults to <c>count</c>.</param>
     /// <param name="rateNumeratorMetric">Numerator metric for rates. Defaults to <c>signal</c>.</param>
+    /// <param name="minPooledRateDelta">
+    /// Minimum absolute pooled-rate delta (as a proportion, e.g. 0.005 = 0.5 pp) required to consider
+    /// a reversal material. Defaults to <c>0.005</c>.
+    /// </param>
+    /// <param name="minChildRateDelta">
+    /// Minimum absolute per-child rate delta (as a proportion) required for a child to contribute to
+    /// the sign test. Defaults to <c>0.005</c>.
+    /// </param>
+    /// <param name="minCellCount">
+    /// Minimum count a child must have in BOTH windows to be included in the sibling sign test.
+    /// Children absent from one window or below this threshold are excluded to avoid spurious
+    /// zero-to-non-zero deltas. Defaults to <c>30</c>.
+    /// </param>
     public static IReadOnlyList<SimpsonParadoxSignal> DetectSimpsonsParadox(
         SummarySnapshot previous,
         SummarySnapshot current,
         string countMetric = "count",
-        string rateNumeratorMetric = "signal")
+        string rateNumeratorMetric = "signal",
+        double minPooledRateDelta = 0.005,
+        double minChildRateDelta = 0.005,
+        int minCellCount = 30)
     {
         var previousByCell = previous.Rows.ToDictionary(CellId.From, x => x, CellId.Comparer);
         var currentByCell = current.Rows.ToDictionary(CellId.From, x => x, CellId.Comparer);
@@ -162,7 +178,7 @@ public static class DeterministicInsightEngine
             var pooledRatePrevious = Numerator / Count;
             var pooledRateCurrent = currentTotals.Numerator / currentTotals.Count;
             var pooledRateDelta = pooledRateCurrent - pooledRatePrevious;
-            if (Math.Abs(pooledRateDelta) < 1e-9)
+            if (Math.Abs(pooledRateDelta) < minPooledRateDelta)
             {
                 continue;
             }
@@ -170,12 +186,14 @@ public static class DeterministicInsightEngine
             var childRateDeltas = new List<(string ChildCellId, double RateDelta)>();
             foreach (var childId in childIds)
             {
-                previousByCell.TryGetValue(childId, out var previousRow);
-                currentByCell.TryGetValue(childId, out var currentRow);
+                if (!previousByCell.TryGetValue(childId, out var previousRow)) continue;
+                if (!currentByCell.TryGetValue(childId, out var currentRow)) continue;
+                if (previousRow[countMetric] < minCellCount || currentRow[countMetric] < minCellCount) continue;
+
                 var previousRate = Rate(previousRow, countMetric, rateNumeratorMetric);
                 var currentRate = Rate(currentRow, countMetric, rateNumeratorMetric);
                 var delta = currentRate - previousRate;
-                if (Math.Abs(delta) >= 1e-9)
+                if (Math.Abs(delta) >= minChildRateDelta)
                 {
                     childRateDeltas.Add((childId, delta));
                 }

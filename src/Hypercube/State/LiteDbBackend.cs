@@ -66,8 +66,16 @@ public sealed class LiteDbBackend<TValue> : IStateBackend<TValue>, IDisposable w
             }
 
             var created = ctx.factory();
-            ctx.collection.Insert(new LiteDbRecord<TValue> { Key = lookupKey, Value = created });
-            return created;
+            try
+            {
+                ctx.collection.Insert(new LiteDbRecord<TValue> { Key = lookupKey, Value = created });
+                return created;
+            }
+            catch (LiteException ex) when (IsDuplicateKey(ex))
+            {
+                var raced = ctx.collection.FindOne(x => x.Key == lookupKey);
+                return raced is not null ? raced.Value : created;
+            }
         }, (collection: _collection, factory));
 
         Touch(key);
@@ -182,6 +190,19 @@ public sealed class LiteDbBackend<TValue> : IStateBackend<TValue>, IDisposable w
             _lruNodes[key] = refreshed;
         }
     }
+
+    /// <summary>
+    /// Returns <c>true</c> when the LiteDB exception signals a unique-index duplicate-key violation.
+    /// Matches on the exception message text as the primary discriminator; the <c>ErrorCode</c>
+    /// property is present on <see cref="LiteException"/> but its enum values are not publicly
+    /// accessible in the pinned LiteDB v5 version, so message matching is the reliable path.
+    /// </summary>
+    /// <remarks>
+    /// TODO(juan): confirm LiteDB dup-key discriminator — message matching is used as a fallback
+    /// because <c>LiteException.ErrorCodes</c> is not publicly accessible in the pinned version.
+    /// </remarks>
+    private static bool IsDuplicateKey(LiteException ex) =>
+        ex.Message.Contains("duplicate key", StringComparison.OrdinalIgnoreCase);
 
     private void EvictIfNeeded()
     {
