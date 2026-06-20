@@ -62,3 +62,32 @@ nunit-*.xml
 
 # Generated merge dumps
 /dump.txt
+# VS Code
+.vscode/
+
+# JetBrains / Rider
+.idea/
+*.DotSettings.user
+
+# Visual Studio / .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.pdb
+
+# Python
+__pycache__/
+*.pyc
+env/
+venv/
+
+# Logs / Dumps
+*.log
+dump.txt
+
+# OS junk
+.DS_Store
+Thumbs.db
+
