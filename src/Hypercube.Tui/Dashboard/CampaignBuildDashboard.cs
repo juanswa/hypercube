@@ -555,6 +555,7 @@ internal sealed class CampaignBuildDashboard : IDisposable
         var aiFallbackMode = _reportNarrator is null;
         var polishedNarrative = _reportNarrator?.Generate(report.Analysis) ?? _plugin.Narrative.Summary(report.Analysis);
         var markdown = ExecutiveCampaignReportRenderer.RenderMarkdown(report, totalMessages, polishedNarrative, aiFallbackMode);
+        var reportPath = BuildTimestampedReportPath();
         var streamed = new System.Text.StringBuilder();
 
         foreach (var chunk in ChunkText(markdown, 120))
@@ -565,8 +566,17 @@ internal sealed class CampaignBuildDashboard : IDisposable
             Thread.Sleep(5);
         }
 
-        File.WriteAllText("campaign-audit.md", markdown);
-        AnsiConsole.MarkupLine("[green]Wrote campaign-audit.md[/]");
+        File.WriteAllText(reportPath, markdown);
+        AnsiConsole.MarkupLine($"[green]Wrote {Markup.Escape(reportPath)}[/]");
+    }
+
+    private static string BuildTimestampedReportPath()
+    {
+        var reportsDirectory = Path.Combine(AppContext.BaseDirectory, "reports");
+        Directory.CreateDirectory(reportsDirectory);
+        var timestamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss-fff");
+        var fileName = $"campaign-audit-{timestamp}.md";
+        return Path.Combine(reportsDirectory, fileName);
     }
 
     private void RenderFinalReport(CampaignReport report, long totalMessages)

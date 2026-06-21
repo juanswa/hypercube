@@ -61,6 +61,23 @@ Useful options:
 - `--download-models` / `--setup-ai` — download local ONNX model weights
 - `--live [refresh-ms]` — force live dashboard mode
 
+What the SMS audit models and reports (deterministic):
+
+- Delivery outcomes: `DELIVRD`, `EXPIRED`, `UNDELIV`, `REJECTD`, `SPAM`, `CANCELLED`
+- Engagement outcomes: `Replies`, `Opt-outs`
+- Engagement rates: `reply_rate` (higher is better), `opt_out_rate` (lower is better)
+- Interpretation guidance:
+  - Rising `opt_out_rate` versus baseline/peers is a poor-campaign signal (message quality/frequency risk)
+  - High `reply_rate` is a positive CTA/engagement signal
+  - Practical opt-out pressure bands: `< 1.5%` healthy, `1.5%–3.5%` watch, `> 3.5%` critical
+
+Report output:
+
+- Campaign audit markdown is written under the TUI runtime output folder:
+  - `src/Hypercube.Tui/bin/<Configuration>/<TargetFramework>/reports/`
+- Each run writes a timestamped file:
+  - `campaign-audit-yyyyMMdd-HHmmss-fff.md`
+
 ### Inject your own engine into the dashboard
 
 ```csharp
