@@ -9,6 +9,8 @@ internal sealed class SmsCampaignGenerator
     private readonly string[] _carriers = { "Vodacom", "MTN", "CellC", "Telkom" };
     private readonly string[] _messageTypes = { "OTP", "Transactional", "Promotional" };
 
+    private sealed record EngagementProfile(double ReplyRate, double OptOutRate);
+
     public SmsCampaignGenerator(int seed = 42)
     {
         _random = new Random(seed);
@@ -39,14 +41,11 @@ internal sealed class SmsCampaignGenerator
             var fractionThrough = i / (double)count;
             var timestamp = windowStart.AddSeconds(fractionThrough * windowSeconds);
 
-            // One generated event represents one attempted message so --campaign count
-            // aligns with report totals and UI expectations.
-            const long total = 1;
-
             // Baseline status mix aligned to requested demo guidance:
             // DELIVRD majority, EXPIRED around 5%, SPAM around 0.5%, with a REJECTD spike anomaly
             // on MTN|Promotional in the final third.
             var isAnomaly = i > anomalyStartIndex && carrier == anomalyCarrier && messageType == anomalyType;
+            var engagement = GetEngagementProfile(messageType, isAnomaly);
             var expiredWeight = Math.Max(0d, 0.050 + ((_random.NextDouble() - 0.5) * 0.010));
             var undelivWeight = Math.Max(0d, 0.010 + ((_random.NextDouble() - 0.5) * 0.004));
             var rejectdWeight = Math.Max(0d, (isAnomaly ? 0.30 : 0.010) + ((_random.NextDouble() - 0.5) * (isAnomaly ? 0.020 : 0.004)));
@@ -129,7 +128,45 @@ internal sealed class SmsCampaignGenerator
                 }
             }
 
-            yield return new SmsEvent(subject.Id, carrier, messageType, timestamp, delivered, expired, undeliv, rejectd, spam, cancelled);
+            var optOuts = 0L;
+            var replies = 0L;
+            if (delivered > 0)
+            {
+                if (_random.NextDouble() < engagement.OptOutRate)
+                {
+                    optOuts = 1;
+                }
+                else if (_random.NextDouble() < engagement.ReplyRate)
+                {
+                    replies = 1;
+                }
+            }
+
+            yield return new SmsEvent(subject.Id, carrier, messageType, timestamp, delivered, expired, undeliv, rejectd, spam, cancelled, replies, optOuts);
         }
+    }
+
+    private EngagementProfile GetEngagementProfile(string messageType, bool isAnomaly)
+    {
+        var (replyRate, optOutRate) = messageType switch
+        {
+            "OTP" => (0.12, 0.002),
+            "Transactional" => (0.35, 0.003),
+            "Promotional" => (0.10, 0.010),
+            _ => (0.10, 0.010)
+        };
+
+        if (isAnomaly)
+        {
+            optOutRate += 0.020;
+            replyRate = Math.Max(0.01, replyRate - 0.040);
+        }
+
+        replyRate += (_random.NextDouble() - 0.5) * 0.02;
+        optOutRate += (_random.NextDouble() - 0.5) * 0.002;
+
+        return new EngagementProfile(
+            ReplyRate: Math.Clamp(replyRate, 0.0, 0.80),
+            OptOutRate: Math.Clamp(optOutRate, 0.0, 0.10));
     }
 }

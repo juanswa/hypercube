@@ -141,6 +141,28 @@ public sealed class SyntheticDataGenerator
                     var expired = (int)Math.Round(notDelivered * 0.25);
                     var spam = Math.Max(0, notDelivered - rejectd - undeliv - expired);
                     var cancelled = 0;
+                    var profile = MessageTypes[messageType];
+                    var campaignReplyRate = _campaign is not null
+                        && _campaign.MessageType.Equals(messageType, StringComparison.OrdinalIgnoreCase)
+                        && currentDate >= _campaign.StartDate
+                        && currentDate < _campaign.StartDate.AddDays(_campaign.Days)
+                        ? _campaign.ResponseRate
+                        : profile.ResponseRate;
+                    var replies = (int)Math.Round(delivered * Math.Clamp(campaignReplyRate, 0.0, 1.0));
+                    var optOuts = (int)Math.Round(delivered * Math.Clamp(profile.OptOutRate, 0.0, 1.0));
+                    if (replies + optOuts > delivered)
+                    {
+                        var overflow = replies + optOuts - delivered;
+                        if (replies >= overflow)
+                        {
+                            replies -= overflow;
+                        }
+                        else
+                        {
+                            optOuts = Math.Max(0, optOuts - (overflow - replies));
+                            replies = 0;
+                        }
+                    }
 
                     events.Add(new SmsEvent(
                         SenderId: _senderId,
@@ -152,7 +174,9 @@ public sealed class SyntheticDataGenerator
                         Undeliv: undeliv,
                         Rejectd: rejectd,
                         Spam: spam,
-                        Cancelled: cancelled));
+                        Cancelled: cancelled,
+                        Replies: replies,
+                        OptOuts: optOuts));
                 }
             }
         }

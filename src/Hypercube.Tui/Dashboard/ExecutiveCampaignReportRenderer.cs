@@ -12,6 +12,8 @@ internal static class ExecutiveCampaignReportRenderer
     private const string DeliveryRateMetric = "delivery_rate";
     private const string RejectRateMetric = "rejectd_rate";
     private const string SpamRateMetric = "spam_rate";
+    private const string ReplyRateMetric = "reply_rate";
+    private const string OptOutRateMetric = "opt_out_rate";
 
     public static void Render(CampaignReport report, long totalMessages, string? polishedNarrative, bool aiFallbackMode)
     {
@@ -23,7 +25,7 @@ internal static class ExecutiveCampaignReportRenderer
             .Title("[bold white on blue] EXECUTIVE CAMPAIGN PERFORMANCE AUDIT [/]")
             .AddColumn(new TableColumn("Content").PadLeft(2).PadRight(2));
 
-        root.AddRow(new Markup(Markup.Escape($"Grade {grade}; Sent {FormatCount(model.Sent)}; Attempted {FormatCount(model.Attempted)}; Delivered {FormatCount(model.Delivered)}; Failed {FormatCount(model.Failed)}; Cancelled {FormatCount(model.Cancelled)}; Delivery {FormatRate(model.DeliveryRate)} of attempted; Failure {FormatRate(model.FailureRate)} of attempted; Segments {model.SegmentCount}.")));
+        root.AddRow(new Markup(Markup.Escape($"Grade {grade}; Sent {FormatCount(model.Sent)}; Attempted {FormatCount(model.Attempted)}; Delivered {FormatCount(model.Delivered)}; Failed {FormatCount(model.Failed)}; Cancelled {FormatCount(model.Cancelled)}; Replies {FormatCount(model.Replies)}; Opt-outs {FormatCount(model.OptOuts)}; Delivery {FormatRate(model.DeliveryRate)} of attempted; Failure {FormatRate(model.FailureRate)} of attempted; Reply {FormatRate(model.ReplyRate)} of delivered; Opt-out {FormatRate(model.OptOutRate)} of delivered; Segments {model.SegmentCount}.")));
         if (!string.IsNullOrWhiteSpace(polishedNarrative))
         {
             root.AddEmptyRow();
@@ -42,6 +44,8 @@ internal static class ExecutiveCampaignReportRenderer
         root.AddRow(new Markup(Markup.Escape(BuildTimingLine(model))));
         root.AddEmptyRow();
         root.AddRow(new Markup(Markup.Escape(BuildAnomalyLine(model))));
+        root.AddEmptyRow();
+        root.AddRow(new Markup(Markup.Escape(BuildEngagementLine(model))));
         root.AddEmptyRow();
         root.AddRow(new Markup(Markup.Escape($"Mode: {(aiFallbackMode ? "Fallback Mode (Weights Missing)" : "Local AI (ONNX Runtime - Fully Offline)")}; Subject: {report.Subject.Id}; Window: {report.WindowStart:u} -> {report.WindowEnd:u}; Total messages: {totalMessages.ToString("N0", CultureInfo.InvariantCulture)}.")));
 
@@ -66,8 +70,12 @@ internal static class ExecutiveCampaignReportRenderer
         sb.AppendLine($"- **Delivered:** {FormatCount(model.Delivered)}");
         sb.AppendLine($"- **Failed:** {FormatCount(model.Failed)}");
         sb.AppendLine($"- **Cancelled:** {FormatCount(model.Cancelled)}");
+        sb.AppendLine($"- **Replies:** {FormatCount(model.Replies)}");
+        sb.AppendLine($"- **Opt-outs:** {FormatCount(model.OptOuts)}");
         sb.AppendLine($"- **Delivery rate:** {FormatRate(model.DeliveryRate)}");
         sb.AppendLine($"- **Failure rate:** {FormatRate(model.FailureRate)}");
+        sb.AppendLine($"- **Reply rate:** {FormatRate(model.ReplyRate)} (of delivered)");
+        sb.AppendLine($"- **Opt-out rate:** {FormatRate(model.OptOutRate)} (of delivered)");
         sb.AppendLine("- **Rate meaning:** Delivery and failure rates use **Attempted = Sent − Cancelled** as the denominator.");
         sb.AppendLine($"- **Window:** {report.WindowStart:u} → {report.WindowEnd:u}; **#segments:** {model.SegmentCount.ToString("N0", CultureInfo.InvariantCulture)}");
         sb.AppendLine($"- **Mode:** {(aiFallbackMode ? "Fallback Mode (Weights Missing)" : "Local AI (ONNX Runtime - Fully Offline)")}");
@@ -129,6 +137,10 @@ internal static class ExecutiveCampaignReportRenderer
         }
 
         sb.AppendLine();
+        sb.AppendLine("## 💬 Engagement quality");
+        sb.AppendLine($"- {BuildEngagementLine(model)}");
+
+        sb.AppendLine();
         sb.AppendLine("## 💥 Quantified impact");
         sb.AppendLine($"- **{FormatCount(model.Failed)} messages were not delivered.**");
         sb.AppendLine($"- {BuildParetoLine(model)}");
@@ -166,10 +178,14 @@ internal static class ExecutiveCampaignReportRenderer
         var rejectd = carrierRows.Sum(static r => r["rejectd"]);
         var spam = carrierRows.Sum(static r => r["spam"]);
         var cancelled = carrierRows.Sum(static r => r["cancelled"]);
+        var replies = carrierRows.Sum(static r => r["replies"]);
+        var optOuts = carrierRows.Sum(static r => r["opt_outs"]);
         var attempted = Math.Max(0d, sent - cancelled);
         var failed = expired + undeliv + rejectd + spam;
         var deliveryRate = attempted <= 0 ? 0d : delivered / attempted;
         var failureRate = attempted <= 0 ? 0d : failed / attempted;
+        var replyRate = delivered <= 0 ? 0d : replies / delivered;
+        var optOutRate = delivered <= 0 ? 0d : optOuts / delivered;
 
         var segmentRows = report.Snapshot.Rows
             .Where(static r => r.Dimension.Equals("carrier_message_type", StringComparison.OrdinalIgnoreCase))
@@ -221,7 +237,7 @@ internal static class ExecutiveCampaignReportRenderer
         var worstHour = hodRows.OrderBy(static r => r[DeliveryRateMetric]).FirstOrDefault();
         var dowRows = report.Snapshot.Rows.Where(static r => r.Dimension.Equals("dow", StringComparison.OrdinalIgnoreCase)).ToList();
 
-        return new ReportModel(sent, attempted, delivered, failed, cancelled, expired, undeliv, rejectd, spam, deliveryRate, failureRate, eligibleSegments.Count, worst, best, topFailed, worstReasonSegments, dominantReason, rankedAnomalies, bestHour, worstHour, dowRows, recommendation, secondary);
+        return new ReportModel(sent, attempted, delivered, failed, cancelled, expired, undeliv, rejectd, spam, replies, optOuts, deliveryRate, failureRate, replyRate, optOutRate, eligibleSegments.Count, worst, best, topFailed, worstReasonSegments, dominantReason, rankedAnomalies, bestHour, worstHour, dowRows, recommendation, secondary);
     }
 
     private static string BuildFailureReasonLine(ReportModel model)
@@ -277,6 +293,25 @@ internal static class ExecutiveCampaignReportRenderer
         return $"Top ranked anomaly: {top.Observation.Kind} on {DescribeDimension(top.Observation.Dimension)} ({top.Observation.CellKey}, {top.Observation.Metric}) actual {FormatRate(top.Observation.Actual)} vs baseline {FormatRate(baseline)}, deviation {FormatSigned(top.Observation.Deviation)}, sent {FormatCount(top.Sent)}.";
     }
 
+    private static string BuildEngagementLine(ReportModel model)
+    {
+        var optOutAssessment = model.OptOutRate switch
+        {
+            > 0.035 => "critical opt-out pressure (above 3.5%) — likely over-frequency or weak message relevance",
+            >= 0.015 => "elevated opt-out pressure (1.5% to 3.5%) — campaign quality risk to review",
+            _ => "healthy opt-out level (below 1.5%)"
+        };
+
+        var replyAssessment = model.ReplyRate switch
+        {
+            >= 0.30 => "strong call-to-action engagement",
+            >= 0.15 => "solid engagement",
+            _ => "low engagement; test clearer calls to action"
+        };
+
+        return $"Engagement: replies {FormatCount(model.Replies)} ({FormatRate(model.ReplyRate)} of delivered), opt-outs {FormatCount(model.OptOuts)} ({FormatRate(model.OptOutRate)} of delivered). Interpretation: {optOutAssessment}; {replyAssessment}.";
+    }
+
     private static string BuildSankeyText(ReportModel model)
     {
         var cancelledShare = model.Sent <= 0 ? 0d : model.Cancelled / model.Sent;
@@ -315,7 +350,7 @@ internal static class ExecutiveCampaignReportRenderer
             ? "Hour-of-day timing data is not available in this snapshot."
             : $"Hour-of-day spread is {FormatRate(model.BestHour[DeliveryRateMetric] - model.WorstHour[DeliveryRateMetric])} between the best and worst hours.";
 
-        return $"{narrative} Overall, {FormatCount(model.Sent)} messages were sent, {FormatCount(model.Attempted)} were attempted at carriers, and {FormatCount(model.Failed)} were not delivered ({FormatRate(model.FailureRate)} failure over attempted traffic). {BuildFailureReasonLine(model)} {concentration} {timing}";
+        return $"{narrative} Overall, {FormatCount(model.Sent)} messages were sent, {FormatCount(model.Attempted)} were attempted at carriers, and {FormatCount(model.Failed)} were not delivered ({FormatRate(model.FailureRate)} failure over attempted traffic). {BuildFailureReasonLine(model)} {concentration} {timing} {BuildEngagementLine(model)}";
     }
 
     private static string DescribeDimension(string dimension) =>
@@ -466,8 +501,12 @@ internal static class ExecutiveCampaignReportRenderer
         double Undeliv,
         double Rejectd,
         double Spam,
+        double Replies,
+        double OptOuts,
         double DeliveryRate,
         double FailureRate,
+        double ReplyRate,
+        double OptOutRate,
         int SegmentCount,
         List<SegmentRow> WorstSegments,
         List<SegmentRow> BestSegments,

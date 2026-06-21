@@ -18,6 +18,8 @@ internal sealed class CampaignBuildDashboard : IDisposable
     private const string DeliveryRateMetric = "delivery_rate";
     private const string RejectdRateMetric = "rejectd_rate";
     private const string SpamRateMetric = "spam_rate";
+    private const string ReplyRateMetric = "reply_rate";
+    private const string OptOutRateMetric = "opt_out_rate";
     private static readonly TimeSpan InsightsRefreshInterval = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan UiFrameInterval = TimeSpan.FromMilliseconds(100);
 
@@ -383,6 +385,8 @@ internal sealed class CampaignBuildDashboard : IDisposable
         table.AddColumn(new TableColumn("SPAM").RightAligned());
         table.AddColumn(new TableColumn("EXPIRED").RightAligned());
         table.AddColumn(new TableColumn("CANCELLED").RightAligned());
+        table.AddColumn(new TableColumn("REPLY").RightAligned());
+        table.AddColumn(new TableColumn("OPT-OUT").RightAligned());
 
         foreach (var row in snapshot.Rows.OrderByDescending(row => row[FailureRateMetric]).Take(18))
         {
@@ -400,12 +404,14 @@ internal sealed class CampaignBuildDashboard : IDisposable
                 row[RejectdRateMetric].ToString("P1", System.Globalization.CultureInfo.InvariantCulture),
                 row[SpamRateMetric].ToString("P1", System.Globalization.CultureInfo.InvariantCulture),
                 expiredRate.ToString("P1", System.Globalization.CultureInfo.InvariantCulture),
-                cancelledRate.ToString("P1", System.Globalization.CultureInfo.InvariantCulture));
+                cancelledRate.ToString("P1", System.Globalization.CultureInfo.InvariantCulture),
+                row[ReplyRateMetric].ToString("P1", System.Globalization.CultureInfo.InvariantCulture),
+                row[OptOutRateMetric].ToString("P1", System.Globalization.CultureInfo.InvariantCulture));
         }
 
         if (snapshot.Rows.Count == 0)
         {
-            table.AddRow("-", "-", "-", "-", "-", "-", "-", "-");
+            table.AddRow("-", "-", "-", "-", "-", "-", "-", "-", "-", "-");
         }
 
         return new Panel(table)

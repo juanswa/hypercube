@@ -13,6 +13,8 @@ namespace Hypercube.Industry.Sms;
 /// <param name="Rejectd">Count of carrier/route rejections.</param>
 /// <param name="Spam">Count of carrier spam-filtered messages.</param>
 /// <param name="Cancelled">Count of messages cancelled before attempt.</param>
+/// <param name="Replies">Count of recipient replies.</param>
+/// <param name="OptOuts">Count of opt-out events.</param>
 public sealed record SmsEvent(
     string SenderId,
     string Carrier,
@@ -23,7 +25,9 @@ public sealed record SmsEvent(
     long Undeliv,
     long Rejectd,
     long Spam,
-    long Cancelled)
+    long Cancelled,
+    long Replies = 0,
+    long OptOuts = 0)
 {
     public long Total => Delivered + Expired + Undeliv + Rejectd + Spam + Cancelled;
 
@@ -41,6 +45,8 @@ public sealed class SmsIndustryPlugin : IIndustryPlugin<SmsEvent>
     private const string FailureRateMetric = "failure_rate";
     private const string RejectRateMetric = "rejectd_rate";
     private const string SpamRateMetric = "spam_rate";
+    private const string ReplyRateMetric = "reply_rate";
+    private const string OptOutRateMetric = "opt_out_rate";
     private const string SentMetric = "sent";
     private const string DeliveredMetric = "delivered";
     private const string ExpiredMetric = "expired";
@@ -48,6 +54,8 @@ public sealed class SmsIndustryPlugin : IIndustryPlugin<SmsEvent>
     private const string RejectdMetric = "rejectd";
     private const string SpamMetric = "spam";
     private const string CancelledMetric = "cancelled";
+    private const string RepliesMetric = "replies";
+    private const string OptOutsMetric = "opt_outs";
 
     /// <summary>Stable industry key.</summary>
     public string IndustryKey => "sms";
@@ -83,6 +91,8 @@ public sealed class SmsIndustryPlugin : IIndustryPlugin<SmsEvent>
             .Ratio(e => (double)e.FailedTotal, e => (double)e.Attempted, FailureRateMetric)
             .Ratio(e => (double)e.Rejectd,     e => (double)e.Attempted, RejectRateMetric)
             .Ratio(e => (double)e.Spam,        e => (double)e.Attempted, SpamRateMetric)
+            .Ratio(e => (double)e.Replies,     e => (double)e.Delivered, ReplyRateMetric)
+            .Ratio(e => (double)e.OptOuts,     e => (double)e.Delivered, OptOutRateMetric)
             .Sum(e => (double)e.Total, SentMetric)
             .Sum(e => (double)e.Delivered, DeliveredMetric)
             .Sum(e => (double)e.Expired, ExpiredMetric)
@@ -90,6 +100,8 @@ public sealed class SmsIndustryPlugin : IIndustryPlugin<SmsEvent>
             .Sum(e => (double)e.Rejectd, RejectdMetric)
             .Sum(e => (double)e.Spam, SpamMetric)
             .Sum(e => (double)e.Cancelled, CancelledMetric)
+            .Sum(e => (double)e.Replies, RepliesMetric)
+            .Sum(e => (double)e.OptOuts, OptOutsMetric)
             .PrimaryMetric(DeliveryRateMetric);
 
         return builder.Build();
@@ -113,6 +125,8 @@ public sealed class SmsIndustryPlugin : IIndustryPlugin<SmsEvent>
             .PercentileDigest(a => a.Rate, FailureRateMetric)
             .PercentileDigest(a => a.Rate, RejectRateMetric)
             .PercentileDigest(a => a.Rate, SpamRateMetric)
+            .PercentileDigest(a => a.Rate, ReplyRateMetric)
+            .PercentileDigest(a => a.Rate, OptOutRateMetric)
             .PrimaryMetric(DeliveryRateMetric);
 
         return builder.Build();
@@ -143,6 +157,8 @@ public sealed class SmsIndustryPlugin : IIndustryPlugin<SmsEvent>
         FailureRateMetric => MetricDirection.LowerIsBetter,
         RejectRateMetric => MetricDirection.LowerIsBetter,
         SpamRateMetric => MetricDirection.LowerIsBetter,
+        ReplyRateMetric => MetricDirection.HigherIsBetter,
+        OptOutRateMetric => MetricDirection.LowerIsBetter,
         SentMetric => MetricDirection.Neutral,
         DeliveredMetric => MetricDirection.Neutral,
         ExpiredMetric => MetricDirection.Neutral,
@@ -150,6 +166,8 @@ public sealed class SmsIndustryPlugin : IIndustryPlugin<SmsEvent>
         RejectdMetric => MetricDirection.Neutral,
         SpamMetric => MetricDirection.Neutral,
         CancelledMetric => MetricDirection.Neutral,
+        RepliesMetric => MetricDirection.Neutral,
+        OptOutsMetric => MetricDirection.Neutral,
         _ => MetricDirection.Neutral
     };
 
