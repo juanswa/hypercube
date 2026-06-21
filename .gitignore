@@ -62,11 +62,12 @@ nunit-*.xml
 
 # Generated merge dumps
 /dump.txt
+# Local command/output capture
+/.output.txt
 # VS Code
 .vscode/
 
 # Root workspace and runtime artifacts
-/.dea/
 /.idea/
 /.vscode/
 /logs/
