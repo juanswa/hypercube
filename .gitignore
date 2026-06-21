@@ -65,6 +65,14 @@ nunit-*.xml
 # VS Code
 .vscode/
 
+# Root workspace and runtime artifacts
+/.dea/
+/.idea/
+/.vscode/
+/logs/
+/campaign-audit.md
+/reports/campaign-audit.md
+
 # JetBrains / Rider
 .idea/
 *.DotSettings.user
