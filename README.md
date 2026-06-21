@@ -49,6 +49,18 @@ dotnet run --project src/Hypercube.Tui
 
 Optional refresh interval in milliseconds: `dotnet run --project src/Hypercube.Tui -- 250`
 
+### SMS campaign audit (deterministic synthetic stream)
+
+```bash
+dotnet run --project src/Hypercube.Tui -- --campaign 2000000
+```
+
+Useful options:
+
+- `--campaign <count>` — run the campaign build demo for a specific message count
+- `--download-models` / `--setup-ai` — download local ONNX model weights
+- `--live [refresh-ms]` — force live dashboard mode
+
 ### Inject your own engine into the dashboard
 
 ```csharp
@@ -69,7 +81,7 @@ dashboard.Run(TimeSpan.FromMilliseconds(500));
 |------|---------|
 | `src/Hypercube/` | Core rollup engine, insights, Parquet spill, visualization helpers |
 | `src/Hypercube.Tui/` | Interactive terminal dashboard and synthetic demo stream |
-| `tests/Hypercube.Tests/` | xUnit tests (39 scenarios) |
+| `tests/Hypercube.Tests/` | xUnit test suite |
 
 ## Insight engines
 
@@ -135,4 +147,5 @@ dotnet test tests/Hypercube.Tests/Hypercube.Tests.csproj
 
 ## Debugging tests
 
-Classic VSTest attach workflow is configured under `.vscode/launch.json`. Use `test.runsettings` (`MaxCpuCount=1`) when attaching a debugger to `testhost`.
+- Rider/JetBrains workflow: run tests from the test explorer and attach the debugger to `testhost` when needed.
+- If using runsettings for debugging stability, use `test.runsettings` (`MaxCpuCount=1`).
