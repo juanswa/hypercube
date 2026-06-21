@@ -41,25 +41,16 @@ engine.Add(new MyEvent("east", 42.0));
 var snapshot = engine.DeriveSnapshot();
 ```
 
-### Live dashboard (demo)
+### SMS campaign audit (deterministic synthetic stream)
 
 ```bash
 dotnet run --project src/Hypercube.Tui
 ```
 
-Optional refresh interval in milliseconds: `dotnet run --project src/Hypercube.Tui -- 250`
-
-### SMS campaign audit (deterministic synthetic stream)
-
-```bash
-dotnet run --project src/Hypercube.Tui -- --campaign 2000000
-```
-
 Useful options:
 
-- `--campaign <count>` — run the campaign build demo for a specific message count
+- `--campaign <count>` — run the campaign build demo for a specific message count (defaults to `10_000_000` when omitted)
 - `--download-models` / `--setup-ai` — download local ONNX model weights
-- `--live [refresh-ms]` — force live dashboard mode
 
 What the SMS audit models and reports (deterministic):
 
@@ -77,6 +68,12 @@ Report output:
   - `src/Hypercube.Tui/bin/<Configuration>/<TargetFramework>/reports/`
 - Each run writes a timestamped file:
   - `campaign-audit-yyyyMMdd-HHmmss-fff.md`
+
+### Example campaign audit report
+
+An example executive report produced by the campaign audit flow is available at:
+
+- `example/campaign-audit-20260621-154926-579.md`
 
 ### Inject your own engine into the dashboard
 
