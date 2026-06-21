@@ -37,10 +37,8 @@ static async Task<int> RunAsync(string[] args)
         return 1;
     }
 
-    var mode = "live";
     var downloadModels = false;
     var campaignCount = 10_000_000;
-    var refreshMs = 500;
 
     for (var i = 0; i < args.Length; i++)
     {
@@ -48,8 +46,12 @@ static async Task<int> RunAsync(string[] args)
 
         if (arg.Equals("--campaign", StringComparison.OrdinalIgnoreCase))
         {
-            mode = "campaign";
-            if (i + 1 >= args.Length || !int.TryParse(args[++i], out var parsedCampaign) || parsedCampaign <= 0)
+            if (i + 1 >= args.Length)
+            {
+                continue;
+            }
+
+            if (!int.TryParse(args[++i], out var parsedCampaign) || parsedCampaign <= 0)
             {
                 Log.Warning("Invalid --campaign argument.");
                 AnsiConsole.MarkupLine("[red]--campaign requires a positive message count.[/]");
@@ -67,29 +69,14 @@ static async Task<int> RunAsync(string[] args)
             continue;
         }
 
-        if (arg.Equals("--live", StringComparison.OrdinalIgnoreCase))
-        {
-            mode = "live";
-            continue;
-        }
-
-        if (int.TryParse(arg, out var parsedRefresh) && parsedRefresh > 0)
-        {
-            mode = "live";
-            refreshMs = parsedRefresh;
-            continue;
-        }
-
         Log.Warning("Unknown argument: {Argument}", arg);
         AnsiConsole.MarkupLine($"[red]Unknown argument: {Markup.Escape(arg)}[/]");
-        AnsiConsole.MarkupLine("[grey]Usage: hypercube-tui [--live [refresh-ms]] | [--campaign count] | [--download-models] | [--setup-ai][/]");
+        AnsiConsole.MarkupLine("[grey]Usage: hypercube-tui [--campaign [count]] [--download-models] [--setup-ai][/]");
         return 1;
     }
 
     AnsiConsole.Write(new FigletText("Hypercube").Color(Color.Cyan1));
-    AnsiConsole.MarkupLine(mode == "campaign"
-        ? "[grey]SMS campaign build demo — deterministic synthetic stream[/]"
-        : "[grey]Live rollup dashboard — synthetic stream demo[/]");
+    AnsiConsole.MarkupLine("[grey]SMS campaign build demo — deterministic synthetic stream[/]");
     AnsiConsole.MarkupLine("[grey]Press [bold]Ctrl+C[/] to cancel. Alerts: [bold]↑/↓[/] scroll, Home/End jump.[/]");
     AnsiConsole.WriteLine();
 
@@ -108,26 +95,9 @@ static async Task<int> RunAsync(string[] args)
         cts.Cancel();
     };
 
-    if (mode == "campaign")
-    {
-        var subject = new DemoSubject("sender-demo", "Vodacom", "Standard", "sms", "ZA", "100k+");
-        using var dashboard = new CampaignBuildDashboard(subject, onnxGenerator);
-        await dashboard.RunAsync(campaignCount, cts.Token);
-    }
-    else
-    {
-        var dashboard = new LiveRollupDashboard();
-        dashboard.Run(
-            refreshInterval: TimeSpan.FromMilliseconds(refreshMs),
-            duration: TimeSpan.FromMinutes(2),
-            cancellationToken: cts.Token);
-
-        if (!cts.Token.IsCancellationRequested)
-        {
-            AnsiConsole.MarkupLine("[grey]Demo complete. Press any key to exit.[/]");
-            Console.ReadKey(intercept: true);
-        }
-    }
+    var subject = new DemoSubject("sender-demo", "Vodacom", "Standard", "sms", "ZA", "100k+");
+    using var dashboard = new CampaignBuildDashboard(subject, onnxGenerator);
+    await dashboard.RunAsync(campaignCount, cts.Token);
 
     return 0;
 }
