@@ -26,6 +26,9 @@ public enum AggregationKind
     /// <summary>Running arithmetic mean of a numeric field (sum and count tracked internally).</summary>
     Average,
 
+    /// <summary>Volume-weighted ratio: sum(numerator) / sum(denominator), materialized at read time.</summary>
+    Ratio,
+
     /// <summary>Approximate distinct count via HyperLogLog over a string entity key.</summary>
     HyperLogLog
 }

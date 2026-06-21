@@ -33,7 +33,10 @@ public sealed class PlainLanguageInsightsTests
 
         Assert.Contains("push channel", body);
         Assert.Contains("69", body);
+        Assert.Contains("peer baseline", body);
+        Assert.Contains("difference", body);
         Assert.DoesNotContain("residual", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("~69 vs ~51", body, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

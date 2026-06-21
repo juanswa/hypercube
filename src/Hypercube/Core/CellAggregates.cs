@@ -107,6 +107,13 @@ internal static class CellAggregator<T>
                         break;
                     }
 
+                    case AggregationKind.Ratio:
+                    {
+                        var denominator = state.MetricValues[offset + 1];
+                        values[metric.Name] = denominator == 0 ? 0 : state.MetricValues[offset] / denominator;
+                        break;
+                    }
+
                     default:
                         values[metric.Name] = ReadValue(metric.Kind, state.MetricValues[offset]);
                         break;
@@ -172,6 +179,11 @@ internal static class CellAggregator<T>
             case AggregationKind.Average:
                 state.MetricValues[offset] += metric.ValueSelector!(item);
                 state.MetricValues[offset + 1]++;
+                break;
+
+            case AggregationKind.Ratio:
+                state.MetricValues[offset] += metric.ValueSelector!(item);
+                state.MetricValues[offset + 1] += metric.DenominatorSelector!(item);
                 break;
 
             case AggregationKind.TDigest:

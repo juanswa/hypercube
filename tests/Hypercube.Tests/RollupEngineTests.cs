@@ -120,4 +120,25 @@ public sealed class RollupEngineTests
         Assert.All(snapshot.Rows, row => Assert.True(row[MetricNameHelper.Mean("points")] > 0));
         Assert.True(Directory.EnumerateFiles(spillDir, "*.db").Any());
     }
+
+    [Fact]
+    public void Ratio_IsVolumeWeighted_NotPerEventMean()
+    {
+        var schema = RollupSchema
+            .For<RateProbe>()
+            .Dimension(e => e.Bucket)
+            .Ratio(e => e.Num, e => e.Den, "rate")
+            .Build();
+
+        var engine = new RollupEngine<RateProbe>(schema);
+        engine.Add(new RateProbe("a", 9, 10));      // 0.90 over 10
+        engine.Add(new RateProbe("a", 990, 1000));  // 0.99 over 1000
+
+        // volume-weighted = (9+990)/(10+1000) = 999/1010 ≈ 0.989
+        // unweighted mean would be (0.90+0.99)/2 = 0.945 — must NOT be this
+        var row = Assert.Single(engine.DeriveSnapshot().Rows);
+        Assert.Equal(0.989, row["rate"], 3);
+    }
+
+    private sealed record RateProbe(string Bucket, double Num, double Den);
 }

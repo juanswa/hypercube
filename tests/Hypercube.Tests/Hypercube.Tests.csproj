@@ -32,5 +32,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Hypercube\Hypercube.csproj" />
+    <ProjectReference Include="..\..\src\Hypercube.AI.Onnx\Hypercube.AI.Onnx.csproj" />
+    <ProjectReference Include="..\..\src\Hypercube.Industry.Sms\Hypercube.Industry.Sms.csproj" />
+    <ProjectReference Include="..\..\src\Hypercube.Tui\Hypercube.Tui.csproj" />
   </ItemGroup>
 </Project>

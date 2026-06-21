@@ -105,6 +105,24 @@ public sealed class DimensionStore<TValue> : IDisposable where TValue : class
         }
     }
 
+    /// <summary>
+    /// Gets or creates a value and applies a mutation before persisting it back to the backend.
+    /// This keeps read-modify-write for a key inside the same dimension store lock and prevents
+    /// concurrent eviction from producing multiple live instances for the same key.
+    /// </summary>
+    public TValue GetOrAddAndMutate(string key, Func<TValue> factory, Action<TValue> mutator)
+    {
+        lock (_gate)
+        {
+            Touch(key);
+            EnsureSpillIfNeeded();
+            var value = _backend.GetOrAdd(key, factory);
+            mutator(value);
+            _backend.Upsert(key, value);
+            return value;
+        }
+    }
+
     /// <summary>Enumerates all key/value pairs in the active backend.</summary>
     public IEnumerable<KeyValuePair<string, TValue>> Enumerate()
     {

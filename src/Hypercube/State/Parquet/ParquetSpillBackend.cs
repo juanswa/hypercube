@@ -42,7 +42,6 @@ public sealed class ParquetSpillBackend<TValue> : IStateBackend<TValue>, IFlusha
             return false;
         }
 
-        _flushCoordinator.RequestFlush();
         return true;
     }
 
@@ -105,19 +104,12 @@ public sealed class ParquetSpillBackend<TValue> : IStateBackend<TValue>, IFlusha
                 return entry;
             },
             (value, clock: _clock));
-        _flushCoordinator.RequestFlush();
     }
 
     /// <inheritdoc />
     public bool TryRemove(string key)
     {
-        var removed = _entries.TryRemove(key, out _);
-        if (removed)
-        {
-            _flushCoordinator.RequestFlush();
-        }
-
-        return removed;
+        return _entries.TryRemove(key, out _);
     }
 
     /// <summary>Persists the in-memory map to Parquet on a background thread.</summary>

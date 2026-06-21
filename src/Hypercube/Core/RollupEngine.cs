@@ -231,9 +231,8 @@ public sealed class RollupEngine<T> : IDisposable
 
             var store = GetOrCreateStore(dimension.Name);
             var spilledBefore = store.HasSpilledToDisk;
-            var state = store.GetOrAdd(safeKey, () => CellAggregator<T>.CreateState(Schema));
-            CellAggregator<T>.Apply(item, Schema, state);
-            store.Upsert(safeKey, state);
+            store.GetOrAddAndMutate(safeKey, () => CellAggregator<T>.CreateState(Schema), state =>
+                CellAggregator<T>.Apply(item, Schema, state));
 
             if (!spilledBefore && store.HasSpilledToDisk)
             {

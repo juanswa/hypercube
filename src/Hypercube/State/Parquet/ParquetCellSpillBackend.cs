@@ -46,7 +46,6 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
             CacheHotUnderLock(key, value);
         }
 
-        _flushCoordinator.RequestFlush();
         return true;
     }
 
@@ -186,7 +185,6 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
         }
 
         PersistEvicted(evicted);
-        _flushCoordinator.RequestFlush();
     }
 
     /// <inheritdoc />
@@ -618,6 +616,8 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
             return;
         }
 
+        var tempPath = Path.ChangeExtension(_filePath, ".tmp");
+
         var keys = new string[materialized.Count];
         var lastAccess = new long[materialized.Count];
         var scalarColumns = new double[_layout.ScalarSlotCount][];
@@ -651,23 +651,33 @@ public sealed class ParquetCellSpillBackend<T> : IStateBackend<CellAggregateStat
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(_filePath))!);
-        using var stream = ParquetFileIO.CreateExclusive(_filePath);
-        using var writer = ParquetWriter.CreateAsync(_layout.ParquetSchema, stream).GetAwaiter().GetResult();
-        using var groupWriter = writer.CreateRowGroup();
-
-        var keyField = _layout.ParquetSchema.DataFields.First(static field => field.Name == ParquetCellColumns.KeyColumn);
-        var lastAccessField = _layout.ParquetSchema.DataFields.First(static field => field.Name == ParquetCellColumns.LastAccessColumn);
-        groupWriter.WriteColumnAsync(new DataColumn(keyField, keys)).GetAwaiter().GetResult();
-        groupWriter.WriteColumnAsync(new DataColumn(lastAccessField, lastAccess)).GetAwaiter().GetResult();
-
-        for (var slot = 0; slot < _layout.ScalarSlotCount; slot++)
+        using (var stream = ParquetFileIO.CreateExclusive(tempPath))
+        using (var writer = ParquetWriter.CreateAsync(_layout.ParquetSchema, stream).GetAwaiter().GetResult())
+        using (var groupWriter = writer.CreateRowGroup())
         {
-            groupWriter.WriteColumnAsync(new DataColumn(_layout.ScalarFields[slot], scalarColumns[slot])).GetAwaiter().GetResult();
+            var keyField = _layout.ParquetSchema.DataFields.First(static field => field.Name == ParquetCellColumns.KeyColumn);
+            var lastAccessField = _layout.ParquetSchema.DataFields.First(static field => field.Name == ParquetCellColumns.LastAccessColumn);
+            groupWriter.WriteColumnAsync(new DataColumn(keyField, keys)).GetAwaiter().GetResult();
+            groupWriter.WriteColumnAsync(new DataColumn(lastAccessField, lastAccess)).GetAwaiter().GetResult();
+
+            for (var slot = 0; slot < _layout.ScalarSlotCount; slot++)
+            {
+                groupWriter.WriteColumnAsync(new DataColumn(_layout.ScalarFields[slot], scalarColumns[slot])).GetAwaiter().GetResult();
+            }
+
+            foreach (var metricIndex in _layout.SketchMetricIndices)
+            {
+                groupWriter.WriteColumnAsync(new DataColumn(_layout.SketchFields[metricIndex], sketchColumns[metricIndex])).GetAwaiter().GetResult();
+            }
         }
 
-        foreach (var metricIndex in _layout.SketchMetricIndices)
+        if (File.Exists(_filePath))
         {
-            groupWriter.WriteColumnAsync(new DataColumn(_layout.SketchFields[metricIndex], sketchColumns[metricIndex])).GetAwaiter().GetResult();
+            File.Replace(tempPath, _filePath, null);
+        }
+        else
+        {
+            File.Move(tempPath, _filePath);
         }
     }
 

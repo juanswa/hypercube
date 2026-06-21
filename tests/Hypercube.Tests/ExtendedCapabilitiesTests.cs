@@ -1,5 +1,7 @@
 namespace Hypercube.Tests;
 
+using global::Hypercube.AI.Onnx;
+
 public sealed record UserEvent(string Region, string UserId, double Amount);
 
 public sealed class ExtendedCapabilitiesTests
@@ -126,7 +128,8 @@ public sealed class ExtendedCapabilitiesTests
         var narrative = engine.GenerateNarrative(snapshot, analysis);
 
         Assert.NotEmpty(analysis.RecommendedInsights);
-        Assert.Contains("deterministic rules applied", narrative);
+        Assert.NotEmpty(narrative);
+        Assert.DoesNotContain("deterministic rules applied", narrative, StringComparison.OrdinalIgnoreCase);
     }
 
     private static SummarySnapshot SnapshotAt(int minutes, params (string CellId, double Value)[] cells)

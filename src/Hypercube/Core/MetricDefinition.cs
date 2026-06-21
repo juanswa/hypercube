@@ -11,13 +11,15 @@ public sealed class MetricDefinition<T>
         AggregationKind kind,
         Func<T, double>? valueSelector = null,
         Func<T, bool>? predicate = null,
-        Func<T, string>? stringSelector = null)
+        Func<T, string>? stringSelector = null,
+        Func<T, double>? denominatorSelector = null)
     {
         Name = name;
         Kind = kind;
         ValueSelector = valueSelector;
         Predicate = predicate;
         StringSelector = stringSelector;
+        DenominatorSelector = denominatorSelector;
     }
 
     /// <summary>Metric name exposed in <see cref="Models.SummaryRow.Metrics"/>.</summary>
@@ -30,6 +32,7 @@ public sealed class MetricDefinition<T>
     internal int SlotCount => Kind switch
     {
         AggregationKind.Average => 2,
+        AggregationKind.Ratio => 2,
         _ => 1
     };
 
@@ -38,6 +41,9 @@ public sealed class MetricDefinition<T>
     /// <see cref="AggregationKind.Max"/>, and <see cref="AggregationKind.Average"/>.
     /// </summary>
     public Func<T, double>? ValueSelector { get; }
+
+    /// <summary>Denominator selector for <see cref="AggregationKind.Ratio"/>. <c>null</c> for other kinds.</summary>
+    public Func<T, double>? DenominatorSelector { get; }
 
     /// <summary>
     /// Predicate for <see cref="AggregationKind.CountWhen"/>. <c>null</c> for other kinds.

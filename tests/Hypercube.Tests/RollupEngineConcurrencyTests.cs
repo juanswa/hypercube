@@ -1,3 +1,5 @@
+using System.Threading;
+using System.Threading.Tasks;
 using Hypercube.State;
 
 namespace Hypercube.Tests;
@@ -35,6 +37,66 @@ public sealed class RollupEngineConcurrencyTests
     }
 
     [Fact]
+    public void RollupEngine_WithBoundedHotCache_ParquetSpillBackend_PreservesConcurrentSameKeyUpdates()
+    {
+        var schema = RollupSchema
+            .For<TeamActivity>()
+            .Dimension(e => e.Team)
+            .Count()
+            .Build();
+
+        var spillDir = Path.Combine(Path.GetTempPath(), $"hypercube-parquet-hotcache-{Guid.NewGuid():N}");
+        using var engine = new RollupEngine<TeamActivity>(schema, new EngineConfiguration
+        {
+            MaxKeysPerDimension = 1,
+            SpillBackend = SpillBackendKind.Parquet,
+            SpillDirectory = spillDir,
+            MaxLiveCacheKeys = 1
+        });
+
+        var timestamp = DateTimeOffset.UtcNow;
+        Parallel.Invoke(
+            () => engine.Add(new TeamActivity(timestamp, "key", 1, Acknowledged: false)),
+            () => engine.Add(new TeamActivity(timestamp, "other", 1, Acknowledged: false)),
+            () => engine.Add(new TeamActivity(timestamp, "key", 1, Acknowledged: false)));
+
+        engine.FlushSpill();
+        var snapshot = engine.DeriveSnapshot();
+        Assert.Equal(2, snapshot.Rows.Count);
+        Assert.Equal(2, snapshot.Rows.Single(row => row.Key == "key").Count);
+    }
+
+    [Fact]
+    public void RollupEngine_WithBoundedLiveCache_LiteDbSpillBackend_PreservesConcurrentSameKeyUpdates()
+    {
+        var schema = RollupSchema
+            .For<TeamActivity>()
+            .Dimension(e => e.Team)
+            .Count()
+            .Build();
+
+        var spillDir = Path.Combine(Path.GetTempPath(), $"hypercube-litedb-hotcache-{Guid.NewGuid():N}");
+        using var engine = new RollupEngine<TeamActivity>(schema, new EngineConfiguration
+        {
+            MaxKeysPerDimension = 2,
+            SpillBackend = SpillBackendKind.LiteDb,
+            SpillDirectory = spillDir,
+            MaxLiveCacheKeys = 1
+        });
+
+        var timestamp = DateTimeOffset.UtcNow;
+        Parallel.Invoke(
+            () => engine.Add(new TeamActivity(timestamp, "key", 1, Acknowledged: false)),
+            () => engine.Add(new TeamActivity(timestamp, "other", 1, Acknowledged: false)),
+            () => engine.Add(new TeamActivity(timestamp, "key", 1, Acknowledged: false)));
+
+        engine.FlushSpill();
+        var snapshot = engine.DeriveSnapshot();
+        Assert.Equal(2, snapshot.Rows.Count);
+        Assert.Equal(2, snapshot.Rows.Single(row => row.Key == "key").Count);
+    }
+
+    [Fact]
     public void Dispose_FlushesParquetSpillBackends()
     {
         var schema = RollupSchema
@@ -57,6 +119,39 @@ public sealed class RollupEngineConcurrencyTests
         engine.Dispose();
 
         Assert.NotEmpty(Directory.EnumerateFiles(spillDir, "*.parquet"));
+    }
+
+    [Fact]
+    public void Dispose_FlushesDirtyCells_LiteDbSpillBackend()
+    {
+        var schema = RollupSchema
+            .For<TeamActivity>()
+            .Dimension(e => e.Team)
+            .Count()
+            .Build();
+
+        var spillDir = Path.Combine(Path.GetTempPath(), $"hypercube-litedb-dispose-{Guid.NewGuid():N}");
+        var ts = DateTimeOffset.UtcNow;
+
+        var engine = new RollupEngine<TeamActivity>(schema, new EngineConfiguration
+        {
+            MaxKeysPerDimension = 1,
+            SpillBackend = SpillBackendKind.LiteDb,
+            SpillDirectory = spillDir,
+            MaxLiveCacheKeys = 0
+        });
+
+        engine.Add(new TeamActivity(ts, "alpha", 1, Acknowledged: false));
+        engine.Add(new TeamActivity(ts, "beta", 1, Acknowledged: false));  // triggers spill of alpha (count=1) to disk
+        engine.Add(new TeamActivity(ts, "alpha", 1, Acknowledged: false)); // mutates spilled alpha -> count=2, dirty in RAM only
+
+        engine.Dispose();                    // MUST flush dirty alpha to disk
+
+        // Reopen the spilled file directly; assert the dirty mutation survived.
+        var dbPath = Directory.EnumerateFiles(spillDir, "*.db").Single();
+        using var backend = new LiteDbBackend<CellAggregateState>(dbPath, "dimension_team");
+        Assert.True(backend.TryGet("alpha", out var state));
+        Assert.Equal(2d, state!.MetricValues[0]); // Count metric, slot 0 — 2 alpha adds, not 1
     }
 
     [Fact]

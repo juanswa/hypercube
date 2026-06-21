@@ -8,16 +8,29 @@ namespace Hypercube.Industry.Sms;
 /// <param name="MessageType">Send category: "OTP", "Transactional", or "Promotional".</param>
 /// <param name="Timestamp">Event time of the send.</param>
 /// <param name="Delivered">Count of delivered messages.</param>
-/// <param name="Failed">Count of failed messages.</param>
-/// <param name="Total">Total messages sent.</param>
+/// <param name="Expired">Count of expired messages.</param>
+/// <param name="Undeliv">Count of permanently undeliverable messages.</param>
+/// <param name="Rejectd">Count of carrier/route rejections.</param>
+/// <param name="Spam">Count of carrier spam-filtered messages.</param>
+/// <param name="Cancelled">Count of messages cancelled before attempt.</param>
 public sealed record SmsEvent(
     string SenderId,
     string Carrier,
     string MessageType,
     DateTimeOffset Timestamp,
     long Delivered,
-    long Failed,
-    long Total);
+    long Expired,
+    long Undeliv,
+    long Rejectd,
+    long Spam,
+    long Cancelled)
+{
+    public long Total => Delivered + Expired + Undeliv + Rejectd + Spam + Cancelled;
+
+    public long Attempted => Total - Cancelled;
+
+    public long FailedTotal => Expired + Undeliv + Rejectd + Spam;
+}
 
 /// <summary>
 /// SMS industry plugin wiring schemas, seasonality, benchmarks, and narration.
@@ -26,7 +39,15 @@ public sealed class SmsIndustryPlugin : IIndustryPlugin<SmsEvent>
 {
     private const string DeliveryRateMetric = "delivery_rate";
     private const string FailureRateMetric = "failure_rate";
-    private const string OptOutRateMetric = "opt_out_rate";
+    private const string RejectRateMetric = "rejectd_rate";
+    private const string SpamRateMetric = "spam_rate";
+    private const string SentMetric = "sent";
+    private const string DeliveredMetric = "delivered";
+    private const string ExpiredMetric = "expired";
+    private const string UndelivMetric = "undeliv";
+    private const string RejectdMetric = "rejectd";
+    private const string SpamMetric = "spam";
+    private const string CancelledMetric = "cancelled";
 
     /// <summary>Stable industry key.</summary>
     public string IndustryKey => "sms";
@@ -53,13 +74,22 @@ public sealed class SmsIndustryPlugin : IIndustryPlugin<SmsEvent>
         var builder = RollupSchema.For<SmsEvent>()
             .Dimension("carrier", e => e.Carrier)
             .Dimension("message_type", e => e.MessageType)
+            .Dimension("carrier_message_type", e => $"{e.Carrier}|{e.MessageType}")
             .Dimension("dow", e => DayBucket(e.Timestamp))
             .Dimension("hod", e => HourBucket(e.Timestamp));
 
         builder = builder
-            .Average(e => (double)e.Delivered, DeliveryRateMetric)
-            .Average(e => (double)e.Failed, FailureRateMetric)
-            .Average(e => 0.0, OptOutRateMetric)
+            .Ratio(e => (double)e.Delivered,   e => (double)e.Attempted, DeliveryRateMetric)
+            .Ratio(e => (double)e.FailedTotal, e => (double)e.Attempted, FailureRateMetric)
+            .Ratio(e => (double)e.Rejectd,     e => (double)e.Attempted, RejectRateMetric)
+            .Ratio(e => (double)e.Spam,        e => (double)e.Attempted, SpamRateMetric)
+            .Sum(e => (double)e.Total, SentMetric)
+            .Sum(e => (double)e.Delivered, DeliveredMetric)
+            .Sum(e => (double)e.Expired, ExpiredMetric)
+            .Sum(e => (double)e.Undeliv, UndelivMetric)
+            .Sum(e => (double)e.Rejectd, RejectdMetric)
+            .Sum(e => (double)e.Spam, SpamMetric)
+            .Sum(e => (double)e.Cancelled, CancelledMetric)
             .PrimaryMetric(DeliveryRateMetric);
 
         return builder.Build();
@@ -81,10 +111,26 @@ public sealed class SmsIndustryPlugin : IIndustryPlugin<SmsEvent>
         builder = builder
             .PercentileDigest(a => a.Rate, DeliveryRateMetric)
             .PercentileDigest(a => a.Rate, FailureRateMetric)
-            .PercentileDigest(a => a.Rate, OptOutRateMetric)
+            .PercentileDigest(a => a.Rate, RejectRateMetric)
+            .PercentileDigest(a => a.Rate, SpamRateMetric)
             .PrimaryMetric(DeliveryRateMetric);
 
         return builder.Build();
+    }
+
+    /// <summary>
+    /// Builds an SMS campaign report for the given snapshot window.
+    /// </summary>
+    public CampaignReport BuildCampaignReport(
+        ISubject subject,
+        SummarySnapshot snapshot,
+        IAccountHistory history,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        double minMateriality = 0.005)
+    {
+        var analysis = SendReportObservationEngine.Build(subject, snapshot, history, this, minMateriality);
+        return new CampaignReport(subject, windowStart, windowEnd, snapshot, analysis);
     }
 
     /// <summary>Categorises a raw SMS event into its send category (already present on the event).</summary>
@@ -95,7 +141,15 @@ public sealed class SmsIndustryPlugin : IIndustryPlugin<SmsEvent>
     {
         DeliveryRateMetric => MetricDirection.HigherIsBetter,
         FailureRateMetric => MetricDirection.LowerIsBetter,
-        OptOutRateMetric => MetricDirection.LowerIsBetter,
+        RejectRateMetric => MetricDirection.LowerIsBetter,
+        SpamRateMetric => MetricDirection.LowerIsBetter,
+        SentMetric => MetricDirection.Neutral,
+        DeliveredMetric => MetricDirection.Neutral,
+        ExpiredMetric => MetricDirection.Neutral,
+        UndelivMetric => MetricDirection.Neutral,
+        RejectdMetric => MetricDirection.Neutral,
+        SpamMetric => MetricDirection.Neutral,
+        CancelledMetric => MetricDirection.Neutral,
         _ => MetricDirection.Neutral
     };
 

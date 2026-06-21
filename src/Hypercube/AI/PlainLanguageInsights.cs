@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Hypercube.AI;
 
 /// <summary>
@@ -169,7 +171,8 @@ public static class PlainLanguageInsights
         {
             var direction = observed >= expected ? "more" : "fewer";
             var delta = Math.Abs(observed - expected);
-            return $"{where} has {direction} events than similar categories (~{observed:0} vs ~{expected:0}, about {delta:0} off).";
+            var ratio = expected <= 0 ? 0d : observed / expected;
+            return $"{where} has {direction} events than similar categories ({observed.ToString("N0", CultureInfo.InvariantCulture)} observed vs {expected.ToString("N0", CultureInfo.InvariantCulture)} peer baseline, {delta.ToString("N0", CultureInfo.InvariantCulture)} difference, {ratio.ToString("0.00", CultureInfo.InvariantCulture)}x baseline).";
         }
 
         return $"{where} stands out from other {where.Split(' ').FirstOrDefault() ?? "categories"} — {SimplifyTechnicalExplanation(insight.Explanation)}";
@@ -180,14 +183,15 @@ public static class PlainLanguageInsights
         if (TryParseEwma(insight.Explanation, out var current, out var baseline))
         {
             var direction = current >= baseline ? "up" : "down";
-            return $"{where} is trending {direction} compared with a moment ago ({current:0} vs recent ~{baseline:0} events).";
+            var delta = current - baseline;
+            return $"{where} is trending {direction} compared with a moment ago ({current.ToString("N0", CultureInfo.InvariantCulture)} now vs {baseline.ToString("N0", CultureInfo.InvariantCulture)} recent baseline, {delta.ToString("+0;-0;0", CultureInfo.InvariantCulture)} events).";
         }
 
         return $"{where} recently changed compared with the last few seconds.";
     }
 
     private static string DescribeZScore(InterestingCellInsight insight, string where) =>
-        $"{where} has much more (or much less) traffic than its recent normal.";
+        $"{where} has unusual traffic compared with its recent baseline.";
 
     private static string DescribeConfirmationRate(double rate) =>
         rate switch
@@ -201,13 +205,40 @@ public static class PlainLanguageInsights
     private static string FriendlyCategory(string dimension, string key)
     {
         var shortKey = StripWindowSuffix(key);
-        return dimension.ToLowerInvariant() switch
+        var normalizedDimension = dimension.ToLowerInvariant();
+        return normalizedDimension switch
         {
+            "hod" => $"Hour of day {FormatHourOfDay(shortKey)}",
+            "dow" => $"{ToTitleCase(shortKey)}",
+            "carrier_message_type" => $"Carrier × message type {shortKey}",
+            "carrier" => $"Carrier {shortKey}",
+            "message_type" => $"Message type {shortKey}",
             "channel" => $"the {shortKey} channel",
             "region" => $"the {shortKey} region",
             "status" => $"{shortKey} status",
-            _ => $"{dimension} '{shortKey}'"
+            _ => $"{ToTitleCase(dimension)} {shortKey}"
         };
+    }
+
+    private static string FormatHourOfDay(string key)
+    {
+        if (int.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hour) && hour is >= 0 and <= 23)
+        {
+            return $"{hour:00}:00-{hour:00}:59";
+        }
+
+        return key;
+    }
+
+    private static string ToTitleCase(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return text;
+        }
+
+        var normalized = text.Replace('_', ' ');
+        return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(normalized);
     }
 
     private static (string Dimension, string Key) ParseCellId(string cellId)
@@ -247,7 +278,7 @@ public static class PlainLanguageInsights
 
         var observedSlice = explanation[(observedIndex + "Observed ".Length)..];
         var observedEnd = observedSlice.IndexOf(' ');
-        if (observedEnd <= 0 || !double.TryParse(observedSlice[..observedEnd], out observed))
+        if (observedEnd <= 0 || !double.TryParse(observedSlice[..observedEnd], NumberStyles.Float, CultureInfo.InvariantCulture, out observed))
         {
             return false;
         }
@@ -264,7 +295,7 @@ public static class PlainLanguageInsights
             expectedEnd = expectedSlice.Length;
         }
 
-        return double.TryParse(expectedSlice[..expectedEnd].Trim(), out expected);
+        return double.TryParse(expectedSlice[..expectedEnd].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out expected);
     }
 
     private static bool TryParseEwma(string explanation, out double current, out double baseline)
@@ -280,7 +311,7 @@ public static class PlainLanguageInsights
 
         var currentSlice = explanation[(currentIndex + "current=".Length)..];
         var currentEnd = currentSlice.IndexOf(',');
-        if (currentEnd < 0 || !double.TryParse(currentSlice[..currentEnd].Trim(), out current))
+        if (currentEnd < 0 || !double.TryParse(currentSlice[..currentEnd].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out current))
         {
             return false;
         }
@@ -292,6 +323,6 @@ public static class PlainLanguageInsights
             baselineEnd = baselineSlice.Length;
         }
 
-        return double.TryParse(baselineSlice[..baselineEnd].Trim().TrimEnd('.'), out baseline);
+        return double.TryParse(baselineSlice[..baselineEnd].Trim().TrimEnd('.'), NumberStyles.Float, CultureInfo.InvariantCulture, out baseline);
     }
 }

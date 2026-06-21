@@ -33,9 +33,9 @@ public sealed class SyntheticDataGenerator
 
     private static readonly Dictionary<string, MessageTypeProfile> MessageTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["OTP"] = new MessageTypeProfile(ResponseRate: 0.000, PositiveShare: 0.00, OptOutRate: 0.0000, DeliveryRateAdj: 0.005),
-        ["Transactional"] = new MessageTypeProfile(ResponseRate: 0.005, PositiveShare: 0.30, OptOutRate: 0.0002, DeliveryRateAdj: 0.000),
-        ["Promotional"] = new MessageTypeProfile(ResponseRate: 0.050, PositiveShare: 0.70, OptOutRate: 0.0020, DeliveryRateAdj: -0.005)
+        ["OTP"] = new MessageTypeProfile(ResponseRate: 0.120, PositiveShare: 0.45, OptOutRate: 0.0020, DeliveryRateAdj: 0.005),
+        ["Transactional"] = new MessageTypeProfile(ResponseRate: 0.350, PositiveShare: 0.30, OptOutRate: 0.0030, DeliveryRateAdj: 0.000),
+        ["Promotional"] = new MessageTypeProfile(ResponseRate: 0.100, PositiveShare: 0.70, OptOutRate: 0.0100, DeliveryRateAdj: -0.005)
     };
 
     // Hourly volume curve (24 values, sum normalized to 1.0)
@@ -135,13 +135,12 @@ public sealed class SyntheticDataGenerator
 
                     var rate = DeliveryRate(messageType);
                     var delivered = (int)Math.Round(sent * rate);
-                    var failed = sent - delivered;
-
-                    // Opt-outs (subset of delivered)
-                    var optOutRate = OptOutRate(messageType);
-                    var optOuts = (int)Math.Round(delivered * optOutRate);
-                    // For the SmsEvent record, we track opt_outs as part of "failed" for simplicity
-                    // In a richer model, this would be a separate field.
+                    var notDelivered = Math.Max(0, sent - delivered);
+                    var rejectd = (int)Math.Round(notDelivered * 0.35);
+                    var undeliv = (int)Math.Round(notDelivered * 0.30);
+                    var expired = (int)Math.Round(notDelivered * 0.25);
+                    var spam = Math.Max(0, notDelivered - rejectd - undeliv - expired);
+                    var cancelled = 0;
 
                     events.Add(new SmsEvent(
                         SenderId: _senderId,
@@ -149,8 +148,11 @@ public sealed class SyntheticDataGenerator
                         MessageType: messageType,
                         Timestamp: new DateTimeOffset(currentDate.ToDateTime(new TimeOnly(hour, 0, 0)), TimeSpan.FromHours(2)),
                         Delivered: delivered,
-                        Failed: failed,
-                        Total: sent));
+                        Expired: expired,
+                        Undeliv: undeliv,
+                        Rejectd: rejectd,
+                        Spam: spam,
+                        Cancelled: cancelled));
                 }
             }
         }
@@ -198,11 +200,6 @@ public sealed class SyntheticDataGenerator
         return Math.Clamp(adjusted, 0.05, 0.995);
     }
 
-    private double OptOutRate(string messageType)
-    {
-        var baseRate = MessageTypes[messageType].OptOutRate;
-        return baseRate * (0.5 + _random.NextDouble());
-    }
 
     private static HashSet<DateOnly> LoadZaHolidays(int year)
     {

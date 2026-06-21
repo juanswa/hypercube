@@ -5,12 +5,14 @@ namespace Hypercube.State;
 /// Keeps a live in-memory reference per key so concurrent updates mutate the same instance.
 /// </summary>
 /// <typeparam name="TValue">Reference-type value stored per key.</typeparam>
-public sealed class LiteDbBackend<TValue> : IStateBackend<TValue>, IDisposable where TValue : class
+public sealed class LiteDbBackend<TValue> : IStateBackend<TValue>, IFlushableSpillBackend, IDisposable where TValue : class
 {
     private readonly LiteDatabase _db;
     private readonly ILiteCollection<LiteDbRecord<TValue>> _collection;
     private readonly ConcurrentDictionary<string, TValue> _liveValues = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _dirtyKeys = new(StringComparer.Ordinal);
     private readonly int _maxLiveCacheKeys;
+    private readonly object _dbGate = new();
     private readonly Lock _cacheGate = new();
     private readonly LinkedList<string> _lruOrder = new();
     private readonly Dictionary<string, LinkedListNode<string>> _lruNodes = new(StringComparer.Ordinal);
@@ -38,49 +40,63 @@ public sealed class LiteDbBackend<TValue> : IStateBackend<TValue>, IDisposable w
     /// <inheritdoc />
     public bool TryAdd(string key, TValue value)
     {
-        if (_collection.Exists(x => x.Key == key))
+        lock (_dbGate)
         {
-            return false;
+            if (_collection.Exists(x => x.Key == key))
+            {
+                return false;
+            }
+
+            _collection.Insert(new LiteDbRecord<TValue> { Key = key, Value = value });
         }
 
-        _collection.Insert(new LiteDbRecord<TValue> { Key = key, Value = value });
-        CacheLiveValue(key, value);
+        CacheLiveValue(key, value, dirty: false);
         return true;
     }
 
     /// <inheritdoc />
     public TValue GetOrAdd(string key, Func<TValue> factory)
     {
-        if (_liveValues.TryGetValue(key, out var live))
+        lock (_dbGate)
         {
-            Touch(key);
-            return live;
-        }
-
-        var value = _liveValues.GetOrAdd(key, static (lookupKey, ctx) =>
-        {
-            var existing = ctx.collection.FindOne(x => x.Key == lookupKey);
-            if (existing is not null)
+            if (_liveValues.TryGetValue(key, out var live))
             {
-                return existing.Value;
+                Touch(key);
+                return live;
             }
 
-            var created = ctx.factory();
+            var existing = _collection.FindOne(x => x.Key == key);
+            if (existing is not null)
+            {
+                var value = existing.Value;
+                CacheLiveValue(key, value, dirty: false);
+                EvictIfNeeded();
+                return value;
+            }
+
+            var created = factory();
             try
             {
-                ctx.collection.Insert(new LiteDbRecord<TValue> { Key = lookupKey, Value = created });
-                return created;
+                _collection.Insert(new LiteDbRecord<TValue> { Key = key, Value = created });
             }
             catch (LiteException ex) when (IsDuplicateKey(ex))
             {
-                var raced = ctx.collection.FindOne(x => x.Key == lookupKey);
-                return raced is not null ? raced.Value : created;
-            }
-        }, (collection: _collection, factory));
+                existing = _collection.FindOne(x => x.Key == key);
+                if (existing is not null)
+                {
+                    var value = existing.Value;
+                    CacheLiveValue(key, value, dirty: false);
+                    EvictIfNeeded();
+                    return value;
+                }
 
-        Touch(key);
-        EvictIfNeeded();
-        return value;
+                throw;
+            }
+
+            CacheLiveValue(key, created, dirty: false);
+            EvictIfNeeded();
+            return created;
+        }
     }
 
     /// <inheritdoc />
@@ -92,22 +108,32 @@ public sealed class LiteDbBackend<TValue> : IStateBackend<TValue>, IDisposable w
             return true;
         }
 
-        var row = _collection.FindOne(x => x.Key == key);
-        if (row is null)
+        lock (_dbGate)
         {
-            value = null;
-            return false;
+            var row = _collection.FindOne(x => x.Key == key);
+            if (row is null)
+            {
+                value = null;
+                return false;
+            }
+
+            value = row.Value;
         }
 
-        value = row.Value;
-        CacheLiveValue(key, value);
+        CacheLiveValue(key, value, dirty: false);
         return true;
     }
 
     /// <inheritdoc />
     public IEnumerable<KeyValuePair<string, TValue>> Enumerate()
     {
-        foreach (var row in _collection.FindAll())
+        IList<LiteDbRecord<TValue>> rows;
+        lock (_dbGate)
+        {
+            rows = _collection.FindAll().ToList();
+        }
+
+        foreach (var row in rows)
         {
             yield return new KeyValuePair<string, TValue>(
                 row.Key,
@@ -116,7 +142,16 @@ public sealed class LiteDbBackend<TValue> : IStateBackend<TValue>, IDisposable w
     }
 
     /// <inheritdoc />
-    public int Count => _collection.Count();
+    public int Count
+    {
+        get
+        {
+            lock (_dbGate)
+            {
+                return _collection.Count();
+            }
+        }
+    }
 
     /// <inheritdoc />
     public void Clear()
@@ -128,22 +163,51 @@ public sealed class LiteDbBackend<TValue> : IStateBackend<TValue>, IDisposable w
             _lruNodes.Clear();
         }
 
-        _collection.DeleteAll();
+        lock (_dbGate)
+        {
+            _collection.DeleteAll();
+        }
     }
 
     /// <inheritdoc />
     public void Upsert(string key, TValue value)
     {
-        CacheLiveValue(key, value);
-        var existing = _collection.FindOne(x => x.Key == key);
-        if (existing is not null)
+        CacheLiveValue(key, value, dirty: true);
+    }
+
+    /// <inheritdoc />
+    public void FlushNow()
+    {
+        var dirtyKeys = _dirtyKeys.Keys.ToArray();
+        if (dirtyKeys.Length == 0)
         {
-            existing.Value = value;
-            _collection.Update(existing);
             return;
         }
 
-        _collection.Insert(new LiteDbRecord<TValue> { Key = key, Value = value });
+        lock (_dbGate)
+        {
+            foreach (var key in dirtyKeys)
+            {
+                if (!_liveValues.TryGetValue(key, out var value))
+                {
+                    _dirtyKeys.TryRemove(key, out _);
+                    continue;
+                }
+
+                var existing = _collection.FindOne(x => x.Key == key);
+                if (existing is not null)
+                {
+                    existing.Value = value;
+                    _collection.Update(existing);
+                }
+                else
+                {
+                    _collection.Insert(new LiteDbRecord<TValue> { Key = key, Value = value });
+                }
+
+                _dirtyKeys.TryRemove(key, out _);
+            }
+        }
     }
 
     /// <inheritdoc />
@@ -162,12 +226,21 @@ public sealed class LiteDbBackend<TValue> : IStateBackend<TValue>, IDisposable w
         return _collection.DeleteMany(x => x.Key == key) > 0;
     }
 
-    /// <summary>Releases the underlying LiteDB database.</summary>
-    public void Dispose() => _db.Dispose();
+    /// <summary>Flushes any dirty cells to disk, then releases the underlying LiteDB database.</summary>
+    public void Dispose()
+    {
+        FlushNow();
+        _db.Dispose();
+    }
 
-    private void CacheLiveValue(string key, TValue value)
+    private void CacheLiveValue(string key, TValue value, bool dirty)
     {
         _liveValues[key] = value;
+        if (dirty)
+        {
+            _dirtyKeys[key] = 0;
+        }
+
         Touch(key);
         EvictIfNeeded();
     }
@@ -211,6 +284,7 @@ public sealed class LiteDbBackend<TValue> : IStateBackend<TValue>, IDisposable w
             return;
         }
 
+        var toPersist = new List<(string Key, TValue Value)>();
         lock (_cacheGate)
         {
             while (_lruOrder.Count > _maxLiveCacheKeys)
@@ -218,7 +292,30 @@ public sealed class LiteDbBackend<TValue> : IStateBackend<TValue>, IDisposable w
                 var key = _lruOrder.Last!.Value;
                 _lruOrder.RemoveLast();
                 _lruNodes.Remove(key);
-                _liveValues.TryRemove(key, out _);
+                if (_liveValues.TryRemove(key, out var value) && _dirtyKeys.TryRemove(key, out _))
+                {
+                    toPersist.Add((key, value));
+                }
+            }
+        }
+
+        if (toPersist.Count > 0)
+        {
+            lock (_dbGate)
+            {
+                foreach (var (key, value) in toPersist)
+                {
+                    var existing = _collection.FindOne(x => x.Key == key);
+                    if (existing is not null)
+                    {
+                        existing.Value = value;
+                        _collection.Update(existing);
+                    }
+                    else
+                    {
+                        _collection.Insert(new LiteDbRecord<TValue> { Key = key, Value = value });
+                    }
+                }
             }
         }
     }

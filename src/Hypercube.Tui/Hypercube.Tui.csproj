@@ -9,10 +9,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Serilog" Version="4.2.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
     <PackageReference Include="Spectre.Console" Version="0.49.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Hypercube\Hypercube.csproj" />
+    <ProjectReference Include="..\Hypercube.AI.Onnx\Hypercube.AI.Onnx.csproj" />
+    <ProjectReference Include="..\Hypercube.Industry.Sms\Hypercube.Industry.Sms.csproj" />
   </ItemGroup>
 </Project>

@@ -17,11 +17,11 @@ public static class SendReportObservationEngine
     /// <param name="history">Account history provider.</param>
     /// <param name="plugin">Industry plugin supplying seasonality, benchmarks, and direction map.</param>
     /// <param name="minMateriality">Minimum absolute deviation to flag as material. Defaults to 0.005 (0.5 pp).</param>
-    public static SendReportAnalysis Build(
+    public static SendReportAnalysis Build<TEvent>(
         ISubject subject,
         SummarySnapshot current,
         IAccountHistory history,
-        IIndustryPlugin<object> plugin,
+        IIndustryPlugin<TEvent> plugin,
         double minMateriality = DefaultMinMateriality)
     {
         // 1. Compute intrinsic analysis against the most recent history window.
@@ -44,11 +44,17 @@ public static class SendReportObservationEngine
                 var actual = row[metric];
                 var direction = plugin.DirectionOf(metric);
 
-                // Self-seasonality baseline.
+                // Self-history/seasonality baseline.
+                var recentBaseline = recentWindows.Count > 0 &&
+                    recentWindows[0].TryGetRow(row.Dimension, row.Key, out var historyRow) &&
+                    historyRow.Metrics.TryGetValue(metric, out var historyValue)
+                        ? historyValue
+                        : (double?)null;
                 var dow = current.GeneratedAt.LocalDateTime.DayOfWeek;
                 var hour = current.GeneratedAt.LocalDateTime.Hour;
                 var isHoliday = plugin.Calendar.IsHoliday(DateOnly.FromDateTime(current.GeneratedAt.LocalDateTime));
-                var selfExpected = plugin.Seasonality.ExpectedSelf(subject.Id, metric, dow, hour, isHoliday);
+                var seasonalExpected = plugin.Seasonality.ExpectedSelf(subject.Id, metric, dow, hour, isHoliday);
+                var selfExpected = recentBaseline ?? seasonalExpected;
 
                 // Cohort benchmark.
                 var cohortBand = plugin.Benchmarks.Lookup(subject, row.Dimension, row.Key, metric);
@@ -104,7 +110,7 @@ public static class SendReportObservationEngine
         return new SendReportAnalysis(subject, intrinsic, observations);
     }
 
-    private static ObservationKind Classify(
+    private static ObservationKind Classify<TEvent>(
         double actual,
         double? selfExpected,
         BenchmarkBand? cohortBand,
@@ -115,7 +121,7 @@ public static class SendReportObservationEngine
         string cellKey,
         string metric,
         ISubject subject,
-        IIndustryPlugin<object> plugin,
+        IIndustryPlugin<TEvent> plugin,
         IReadOnlyList<SummarySnapshot> coMovementHistory)
     {
         // 1. SeasonalExpected: actual ≈ selfExpected (seasonality explains the movement).

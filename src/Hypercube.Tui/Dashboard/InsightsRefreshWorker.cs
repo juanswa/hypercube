@@ -42,6 +42,22 @@ internal sealed class InsightsRefreshWorker
         EnsureRunning();
     }
 
+    public void WaitForIdle()
+    {
+        while (true)
+        {
+            lock (_pendingSync)
+            {
+                if (_inFlight == 0 && _latestPending is null)
+                {
+                    return;
+                }
+            }
+
+            Thread.Sleep(10);
+        }
+    }
+
     private void EnsureRunning()
     {
         if (Interlocked.CompareExchange(ref _inFlight, 1, 0) != 0)

@@ -21,9 +21,18 @@ public sealed class StaticIndustryBenchmarkProvider : IBenchmarkProvider
             var c = segment.Carrier.ToLowerInvariant();
             var mt = segment.MessageType.ToLowerInvariant();
             var st = segment.SenderTier.ToLowerInvariant();
-            _lookup.Add((c, mt, st, "delivery_rate"), segment);
-            _lookup.Add((c, mt, st, "opt_out_rate"), segment);
+            AddLookup(c, mt, st, "delivery_rate", segment);
+            AddLookup(c, mt, st, "opt_out_rate", segment);
+            AddLookup(c, "*", st, "delivery_rate", segment);
+            AddLookup(c, "*", st, "opt_out_rate", segment);
+            AddLookup("*", mt, st, "delivery_rate", segment);
+            AddLookup("*", mt, st, "opt_out_rate", segment);
         }
+    }
+
+    private void AddLookup(string carrier, string messageType, string senderTier, string metric, BenchmarkSegment segment)
+    {
+        _lookup[(carrier, messageType, senderTier, metric)] = segment;
     }
 
     /// <summary>
@@ -34,56 +43,65 @@ public sealed class StaticIndustryBenchmarkProvider : IBenchmarkProvider
         ArgumentNullException.ThrowIfNull(subject);
         ArgumentNullException.ThrowIfNull(metric);
 
-        // cellKey is the carrier in the SMS plugin's carrier dimension.
-        // Match against the benchmark data by carrier + message_type + sender_tier + metric.
-        var carrier = cellKey;
-        var messageType = dimension switch
-        {
-            "message_type" => cellKey,
-            _ => "all"
-        };
-
-        // For the SMS plugin, the dimension name tells us what cellKey represents.
-        // carrier dimension: cellKey = carrier name
-        // message_type dimension: cellKey = message type
-        // We need to look up by all three dimensions, but Lookup only gives us one cellKey at a time.
-        // Fallback: match on carrier only, ignore message_type and tier for now.
-        // The observation engine will call this per (dimension, cell, metric), so we return
-        // the best available band for the carrier + metric combination.
-
         var senderTier = subject.Tier.ToLowerInvariant();
-        var key = (carrier.ToLowerInvariant(), messageType.ToLowerInvariant(), senderTier, metric.ToLowerInvariant());
-        if (_lookup.TryGetValue(key, out var segment))
+        var metricKey = metric.ToLowerInvariant();
+        var (carrier, messageType) = ResolveCarrierAndMessageType(dimension, cellKey);
+        if (carrier is null || messageType is null)
         {
-            var percentiles = metric.ToLowerInvariant() switch
-            {
-                "delivery_rate" => segment.DeliveryRate,
-                "opt_out_rate" => segment.OptOutRate,
-                _ => null
-            };
-
-            if (percentiles is null)
-            {
-                return null;
-            }
-
-            var cohort = new CohortKey(
-                subject.Tier,
-                subject.Vertical,
-                carrier,
-                messageType,
-                "all",
-                "all");
-
-            return new BenchmarkBand(
-                P25: percentiles.P25,
-                Median: percentiles.Median,
-                P75: percentiles.P75,
-                PeerCount: segment.SampleSizeHours,
-                Resolved: cohort,
-                P90: percentiles.P90);
+            return null;
         }
 
-        return null;
+        var key = (carrier, messageType, senderTier, metricKey);
+        if (!_lookup.TryGetValue(key, out var segment))
+        {
+            return null;
+        }
+
+        var percentiles = metricKey switch
+        {
+            "delivery_rate" => segment.DeliveryRate,
+            "opt_out_rate" => segment.OptOutRate,
+            _ => null
+        };
+
+        if (percentiles is null)
+        {
+            return null;
+        }
+
+        var cohort = new CohortKey(
+            subject.Tier,
+            subject.Vertical,
+            carrier,
+            messageType,
+            "all",
+            "all");
+
+        return new BenchmarkBand(
+            P25: percentiles.P25,
+            Median: percentiles.Median,
+            P75: percentiles.P75,
+            PeerCount: segment.SampleSizeHours,
+            Resolved: cohort,
+            P90: percentiles.P90);
+    }
+
+    private static (string? Carrier, string? MessageType) ResolveCarrierAndMessageType(string dimension, string cellKey)
+    {
+        return dimension switch
+        {
+            "carrier" => (cellKey.ToLowerInvariant(), "*"),
+            "message_type" => ("*", cellKey.ToLowerInvariant()),
+            "carrier_message_type" => ResolveCarrierMessageTypeCell(cellKey),
+            _ => (null, null)
+        };
+    }
+
+    private static (string? Carrier, string? MessageType) ResolveCarrierMessageTypeCell(string cellKey)
+    {
+        var parts = cellKey.Split('|', 2);
+        return parts.Length == 2
+            ? (parts[0].ToLowerInvariant(), parts[1].ToLowerInvariant())
+            : (null, null);
     }
 }

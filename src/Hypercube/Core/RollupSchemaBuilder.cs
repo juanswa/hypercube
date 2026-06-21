@@ -115,6 +115,23 @@ public sealed class RollupSchemaBuilder<T>
     }
 
     /// <summary>
+    /// Tracks a volume-weighted ratio: sum(<paramref name="numerator"/>) / sum(<paramref name="denominator"/>).
+    /// Large and small contributors are weighted by denominator, unlike an unweighted mean of per-event ratios.
+    /// </summary>
+    public RollupSchemaBuilder<T> Ratio(
+        Expression<Func<T, double>> numerator,
+        Expression<Func<T, double>> denominator,
+        string name)
+    {
+        _metrics.Add(new MetricDefinition<T>(
+            name,
+            AggregationKind.Ratio,
+            valueSelector: numerator.Compile(),
+            denominatorSelector: denominator.Compile()));
+        return this;
+    }
+
+    /// <summary>
     /// Tracks approximate distinct counts for a string entity (for example user IDs or source IPs).
     /// </summary>
     /// <param name="selector">Entity key to observe.</param>
